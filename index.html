@@ -24,11 +24,13 @@
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+        
+        /* The outer body background changes dynamically, while container style is preserved */
         body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; transition: background 0.2s, color 0.2s; }
         
-        .chat-container { width: 100%; max-width: 500px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 600px; }
-        
-        /* Updated Header layout handles live presence counters and custom toggles */
+        .chat-container { width: 100%; max-width: 500px; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 600px; color: #18181b; }
+        [data-theme="dark"] .chat-container { background: #18181c; border-color: #2d2d34; color: #e2e8f0; }
+
         .chat-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
         .chat-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.5px; }
         
@@ -46,11 +48,14 @@
         input:disabled { opacity: 0.6; cursor: not-allowed; }
         
         .error-toast { color: var(--error); font-size: 0.85rem; min-height: 18px; text-align: center; font-weight: 500; }
+
+        /* Full screen overlay view specifically styled for mobile blockers */
+        .mobile-blocker { display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px; font-weight: 600; font-size: 1.2rem; }
     </style>
 </head>
 <body>
 
-    <div class="chat-container">
+    <div class="chat-container" id="appContainer">
         <div class="chat-header">
             <div>
                 <h2>0chan</h2>
@@ -78,6 +83,15 @@
     <!-- Script loading for real-time open socket sync channel -->
     <script src="https://js.pusher.com/7.0/pusher.min.js"></script>
     <script>
+        // --- MOBILE COMPATIBILITY DEVICE CHECK ---
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+        
+        if (isMobile) {
+            // Nuke the main window immediately if mobile is detected
+            document.getElementById('appContainer').outerHTML = '<div class="mobile-blocker" style="display: flex;">The site is not compatible with mobile yet :/ sorry</div>';
+            throw new Error("Execution halted: Mobile device detected."); 
+        }
+
         const messageBox = document.getElementById('messageBox');
         const msgInput = document.getElementById('msgInput');
         const errorToast = document.getElementById('errorToast');
@@ -139,7 +153,7 @@
         const BANNED_PATTERNS = [
             /\bn[i1l|]gg[a4e3r]s?\b/i, /\bsl[u0]t[s]?\b/i, /\bwh[o0]r[e3][s]?\b/i,
             /\bc[u0]m\b/i, /\bs[e3]m[3e]n\b/i, /\bd[i1l|]ck[s]?\b/i, /\bp[u0]ss[y1i]\b/i, /\bg[@a]y\b/i,
-            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA- registries]{2,}/, /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/,
+            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/,
             /https?:\/\/[^\s]+/i, /\b(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\b/i,
             /\bdiscord\b/i, /\bsnapchat\b/i, /\binstagram\b/i, /\big\b/i, /\btwitter\b/i, /\btiktok\b/i
         ];
@@ -239,7 +253,6 @@
             };
             
             try {
-                // Send the instruction signature through the active node frame
                 await fetch('https://tmp-json-proxy.vercel.app/api/relay', {
                     method: 'POST',
                     mode: 'no-cors',
@@ -366,6 +379,7 @@
             }
         });
 
+        // Simple XML/HTML escape utility function
         function escapeHTML(str) {
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
