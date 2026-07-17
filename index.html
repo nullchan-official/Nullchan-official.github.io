@@ -147,6 +147,50 @@
         let isConnected = false;
         let receivedHistoryPayload = false;
 
+        // --- ANTI-SPAM & ANTI-BOT SYSTEM STATE ---
+        let userMessageTimestamps = [];
+        let isRateLimited = false;
+
+        // --- CONTENT MODERATION FILTER ENGINE ---
+        function containsBannedContent(inputText) {
+            // Normalize characters to clear out leetspeak filters
+            let cleanText = inputText.toLowerCase();
+            
+            const substitutions = {
+                '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', 
+                '@': 'a', '5': 's', '$': 's', '7': 't', 'x': 'x',
+                '(': 'c', '[': 'c'
+            };
+            
+            cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
+            
+            // REMOVE ALL SPACES AND PUNCTUATION (Destroys evasions like "w h o r e")
+            cleanText = cleanText.replace(/[^a-z0-9]/g, '');
+
+            const bannedWords = [
+                'goon', 'whore', 'slut', 
+                'discord', 'tiktok', 'snapchat', 'snap'
+            ];
+
+            // Scan if normalized payload contains any blocked keywords
+            for (const word of bannedWords) {
+                if (cleanText.includes(word)) {
+                    return true;
+                }
+            }
+
+            // Pattern recognition check for emails, phone numbers and clear addresses
+            const emailPattern = /[a-z0-9._%+-]+@gmail\.com/i;
+            const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
+            const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
+
+            if (emailPattern.test(inputText) || phonePattern.test(inputText) || addressPattern.test(cleanText)) {
+                return true;
+            }
+
+            return false;
+        }
+
         function generateColorFromToken(str) {
             let hash = 0;
             for (let i = 0; i < str.length; i++) {
@@ -185,11 +229,12 @@
             document.getElementById('onlineCount').innerText = "Live";
             errorToast.innerText = "";
             
-            msgInput.disabled = false;
-            sendBtn.disabled = false;
-            msgInput.placeholder = "Type a message...";
+            if (!isRateLimited) {
+                msgInput.disabled = false;
+                sendBtn.disabled = false;
+                msgInput.placeholder = "Type a message...";
+            }
 
-            // Fallback timeout: if history is corrupted or empty, open the room anyway after 1.5 seconds
             setTimeout(() => {
                 if (!receivedHistoryPayload) {
                     renderMessages(globalMessages);
@@ -219,12 +264,10 @@
         client.on('message', (topic, payload) => {
             let incomingData;
             
-            // Bulletproof Parse Strategy: Bad data is intercepted here and dropped cleanly
             try {
                 incomingData = JSON.parse(payload.toString());
             } catch(e) {
                 console.warn(`Ignored malformed packet on ${topic}`);
-                // If the history cache itself is what was broken, force open the chat room clear
                 if (topic === HISTORY_TOPIC) {
                     receivedHistoryPayload = true;
                     renderMessages([]);
@@ -245,7 +288,7 @@
                 if (topic === HISTORY_TOPIC) {
                     receivedHistoryPayload = true;
                     if (Array.isArray(incomingData) && globalMessages.length === 0) {
-                        globalMessages = incomingData;
+                        globalMessages = incomingData.filter(m => m.text && !containsBannedContent(m.text));
                         renderMessages(globalMessages);
                     } else if (incomingData && incomingData.action === 'CLEAR_PURGE') {
                         globalMessages = [];
@@ -261,6 +304,9 @@
                         return;
                     }
                     if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
+                        if (containsBannedContent(incomingData.text)) {
+                            return; // Silently drop matching remote client traffic rules
+                        }
                         globalMessages.push(incomingData);
                         if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
                         renderMessages(globalMessages);
@@ -282,7 +328,7 @@
             }
             messageBox.innerHTML = '';
             msgs.forEach(msg => {
-                if (!msg.text) return; // Skip broken structural elements safely
+                if (!msg.text) return;
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
@@ -296,13 +342,49 @@
         }
 
         function handleSendMessage() {
-            if(!isConnected) return;
+            if (!isConnected || isRateLimited) return;
+
+            const now = Date.now();
             const text = msgInput.value.trim();
             if (!text) return;
-            
+
+            // --- RATELIMIT METRIC SCANNER ---
+            // Log timestamp
+            userMessageTimestamps.push(now);
+            // Retain only the last 5 messages for interval computation
+            if (userMessageTimestamps.length > 5) {
+                userMessageTimestamps.shift();
+            }
+
+            // Check if user has generated 5 entries down within a fast rolling window
+            if (userMessageTimestamps.length === 5) {
+                let triggersSpamFlag = true;
+                for (let i = 1; i < userMessageTimestamps.length; i++) {
+                    // Check if consecutive messages are separated by less than 2 seconds (2000ms)
+                    if (userMessageTimestamps[i] - userMessageTimestamps[i - 1] >= 2000) {
+                        triggersSpamFlag = false;
+                        break;
+                    }
+                }
+
+                if (triggersSpamFlag) {
+                    triggerRateLimit();
+                    msgInput.value = '';
+                    return;
+                }
+            }
+
+            // Text moderation validator
+            if (containsBannedContent(text)) {
+                errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
+                setTimeout(() => { if(!isRateLimited) errorToast.innerText = ""; }, 4000);
+                msgInput.value = '';
+                return;
+            }
+
             const newMsg = {
                 id: userToken + '_' + Date.now() + '_' + Math.floor(Math.random()*1000),
-                timestamp: Date.now(),
+                timestamp: now,
                 sender: userToken,
                 text: text,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -311,6 +393,34 @@
             client.publish(CHAT_TOPIC, JSON.stringify(newMsg), { qos: 1 });
             msgInput.value = '';
             msgInput.focus();
+        }
+
+        function triggerRateLimit() {
+            isRateLimited = true;
+            msgInput.disabled = true;
+            sendBtn.disabled = true;
+            
+            let remainingTime = 5.0;
+            errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+            msgInput.placeholder = "Locked due to spam protection...";
+
+            const countdownInterval = setInterval(() => {
+                remainingTime -= 0.1;
+                if (remainingTime <= 0) {
+                    clearInterval(countdownInterval);
+                    isRateLimited = false;
+                    errorToast.innerText = "";
+                    
+                    if (isConnected) {
+                        msgInput.disabled = false;
+                        sendBtn.disabled = false;
+                        msgInput.placeholder = "Type a message...";
+                        msgInput.focus();
+                    }
+                } else {
+                    errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+                }
+            }, 100);
         }
 
         window.clearMessages = function() {
