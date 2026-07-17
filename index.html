@@ -89,7 +89,7 @@
         </div>
         
         <div class="message-box" id="messageBox">
-            <div class="loading-notice">Loading channels and syncing history...</div>
+            <div class="loading-notice" id="loadingNotice">Loading channels and syncing history...</div>
         </div>
 
         <div class="input-area">
@@ -104,8 +104,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
         const errorToast = document.getElementById('errorToast');
+        const loadingNotice = document.getElementById('loadingNotice');
 
-        // --- GLOBAL CRASH HANDLER MATRIX ---
+        // --- GLOBAL CRASH HANDLER ---
         window.addEventListener('error', function(event) {
             errorToast.innerText = `Crash caught: ${event.message || 'Unknown Execution Error'}`;
         });
@@ -125,7 +126,6 @@
         const themeBtn = document.getElementById('themeBtn');
         const presenceDot = document.getElementById('presenceDot');
 
-        // High Entropy Node Identity Generator to stop user connection kicking conflicts
         const cryptoArray = new Uint32Array(1);
         window.crypto.getRandomValues(cryptoArray);
         let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36);
@@ -145,6 +145,7 @@
         let globalMessages = [];
         let activePeers = {}; 
         let isConnected = false;
+        let receivedHistoryPayload = false;
 
         function generateColorFromToken(str) {
             let hash = 0;
@@ -176,7 +177,7 @@
         client.on('connect', () => {
             isConnected = true;
             client.subscribe([CHAT_TOPIC, HISTORY_TOPIC, STATUS_TOPIC], (err) => {
-                if(err) throw new Error("Topic subscription failed layout pipelines");
+                if(err) console.error("Topic subscription error");
             });
 
             presenceDot.style.background = "#22c55e";
@@ -184,10 +185,16 @@
             document.getElementById('onlineCount').innerText = "Live";
             errorToast.innerText = "";
             
-            // Unblock layout elements on successful server attachment
             msgInput.disabled = false;
             sendBtn.disabled = false;
             msgInput.placeholder = "Type a message...";
+
+            // Fallback timeout: if history is corrupted or empty, open the room anyway after 1.5 seconds
+            setTimeout(() => {
+                if (!receivedHistoryPayload) {
+                    renderMessages(globalMessages);
+                }
+            }, 1500);
 
             client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
             setInterval(() => {
@@ -195,17 +202,8 @@
             }, 4000);
         });
 
-        client.on('disconnect', () => {
-            handleOfflineState("Disconnected from broker");
-        });
-
-        client.on('offline', () => {
-            handleOfflineState("Connection dropped. Retrying...");
-        });
-
-        client.on('error', (err) => {
-            errorToast.innerText = `Broker Error: ${err.message || err}`;
-        });
+        client.on('disconnect', () => { handleOfflineState("Disconnected from broker"); });
+        client.on('offline', () => { handleOfflineState("Connection dropped. Retrying..."); });
 
         function handleOfflineState(msg) {
             isConnected = false;
@@ -219,9 +217,22 @@
         }
 
         client.on('message', (topic, payload) => {
+            let incomingData;
+            
+            // Bulletproof Parse Strategy: Bad data is intercepted here and dropped cleanly
             try {
-                const incomingData = JSON.parse(payload.toString());
-                
+                incomingData = JSON.parse(payload.toString());
+            } catch(e) {
+                console.warn(`Ignored malformed packet on ${topic}`);
+                // If the history cache itself is what was broken, force open the chat room clear
+                if (topic === HISTORY_TOPIC) {
+                    receivedHistoryPayload = true;
+                    renderMessages([]);
+                }
+                return; 
+            }
+            
+            try {
                 if (topic === STATUS_TOPIC) {
                     activePeers[incomingData.user] = Date.now();
                     const cutoff = Date.now() - 10000;
@@ -232,6 +243,7 @@
                 }
 
                 if (topic === HISTORY_TOPIC) {
+                    receivedHistoryPayload = true;
                     if (Array.isArray(incomingData) && globalMessages.length === 0) {
                         globalMessages = incomingData;
                         renderMessages(globalMessages);
@@ -248,7 +260,7 @@
                         renderMessages([]);
                         return;
                     }
-                    if (!globalMessages.some(m => m.id === incomingData.id)) {
+                    if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
                         globalMessages.push(incomingData);
                         if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
                         renderMessages(globalMessages);
@@ -259,7 +271,7 @@
                     }
                 }
             } catch(e) {
-                errorToast.innerText = `Parsing Error: Failed incoming content packets`;
+                console.error("Internal process error", e);
             }
         });
 
@@ -270,13 +282,14 @@
             }
             messageBox.innerHTML = '';
             msgs.forEach(msg => {
+                if (!msg.text) return; // Skip broken structural elements safely
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
                 const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
                 div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
-                div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time)}</div>`;
+                div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
                 messageBox.appendChild(div);
             });
             messageBox.scrollTop = messageBox.scrollHeight;
@@ -300,7 +313,6 @@
             msgInput.focus();
         }
 
-        // Exposed layout interface logic to trigger database clears easily over channels
         window.clearMessages = function() {
             if(!isConnected) return;
             const clearCmd = { action: 'CLEAR_PURGE', timestamp: Date.now() };
