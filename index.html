@@ -176,13 +176,14 @@
         let receivedHistoryPayload = false;
         
         let currentOnlineCount = 1;
-        let showingUsernames = false; // Tracks if the >16 threshold is met
+        let showingUsernames = false;
 
-        // --- ANTI-SPAM & ANTI-BOT SYSTEM STATE ---
+        // --- ANTI-SPAM & MODERATION STATE ---
         let userMessageTimestamps = [];
         let isRateLimited = false;
+        let isChatShutdown = false; // Prevents normal users from sending
+        let modShutdownActive = false; // Tracks if THIS user is the mod who shut it down
 
-        // --- STRICT DISTINCT COLOR ENGINE ---
         const DISTINCT_COLORS = [
             '#ef4444', '#3b82f6', '#22c55e', '#eab308', 
             '#a855f7', '#ec4899', '#14b8a6', '#f97316', 
@@ -199,7 +200,6 @@
             return DISTINCT_COLORS[index];
         }
 
-        // --- CONTENT MODERATION FILTER ENGINE ---
         function containsBannedContent(inputText) {
             let cleanText = inputText.toLowerCase();
             
@@ -256,7 +256,7 @@
             document.getElementById('onlineCount').innerText = "Live";
             errorToast.innerText = "";
             
-            if (!isRateLimited) {
+            if (!isRateLimited && !isChatShutdown) {
                 msgInput.disabled = false;
                 sendBtn.disabled = false;
                 msgInput.placeholder = "Type a message...";
@@ -307,11 +307,10 @@
                     
                     document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
                     
-                    // Display usernames dynamically if > 16 people are online (to prevent color collisions)
                     let shouldShowUsernames = count > 16;
                     if (showingUsernames !== shouldShowUsernames) {
                         showingUsernames = shouldShowUsernames;
-                        renderMessages(globalMessages); // Re-render feed with or without tags
+                        renderMessages(globalMessages);
                     }
                     return;
                 }
@@ -329,11 +328,37 @@
                 }
 
                 if (topic === CHAT_TOPIC) {
+                    // --- MODERATOR COMMANDS ---
+                    if (incomingData.action === 'SHUTDOWN') {
+                        if (incomingData.sender !== userToken) {
+                            isChatShutdown = true;
+                            msgInput.disabled = true;
+                            sendBtn.disabled = true;
+                            msgInput.placeholder = "Chat disabled by moderator...";
+                            errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
+                        }
+                        return;
+                    }
+                    if (incomingData.action === 'ACTIVATE') {
+                        if (incomingData.sender !== userToken) {
+                            isChatShutdown = false;
+                            if (!isRateLimited && isConnected) {
+                                msgInput.disabled = false;
+                                sendBtn.disabled = false;
+                                msgInput.placeholder = "Type a message...";
+                                errorToast.innerText = "";
+                            }
+                        }
+                        return;
+                    }
+
+                    // --- NORMAL MESSAGES & PURGES ---
                     if (incomingData.action === 'CLEAR_PURGE') {
                         globalMessages = [];
                         renderMessages([]);
                         return;
                     }
+
                     if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
                         if (containsBannedContent(incomingData.text)) return; 
                         
@@ -362,13 +387,11 @@
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                // Color matches their IP (or token fallback), guaranteeing refresh consistency
                 const identifierToHash = msg.userIpIdentifier || msg.sender || 'anon';
                 const leftOutlineColor = getColorFromIdentifier(identifierToHash);
                 
                 div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
-                // Inject username tag ONLY if threshold is crossed (more than 16 users)
                 let nameTagHTML = '';
                 if (showingUsernames) {
                     nameTagHTML = `<span class="sender-id" style="color: ${leftOutlineColor}">${escapeHTML(msg.sender || 'anon')}</span>`;
@@ -381,13 +404,12 @@
         }
 
         function handleSendMessage() {
-            if (!isConnected || isRateLimited) return;
+            if (!isConnected || isRateLimited || isChatShutdown) return;
 
             const now = Date.now();
             const text = msgInput.value.trim();
             if (!text) return;
 
-            // --- RATELIMIT SCANNER ---
             userMessageTimestamps.push(now);
             if (userMessageTimestamps.length > 5) userMessageTimestamps.shift();
 
@@ -408,7 +430,7 @@
 
             if (containsBannedContent(text)) {
                 errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
-                setTimeout(() => { if(!isRateLimited) errorToast.innerText = ""; }, 4000);
+                setTimeout(() => { if(!isRateLimited && !isChatShutdown) errorToast.innerText = ""; }, 4000);
                 msgInput.value = '';
                 return;
             }
@@ -417,7 +439,7 @@
                 id: userToken + '_' + Date.now() + '_' + Math.floor(Math.random()*1000),
                 timestamp: now,
                 sender: userToken,
-                userIpIdentifier: userIP, // Bound to their IP for consistent coloring
+                userIpIdentifier: userIP,
                 text: text,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
@@ -441,13 +463,16 @@
                 if (remainingTime <= 0) {
                     clearInterval(countdownInterval);
                     isRateLimited = false;
-                    errorToast.innerText = "";
                     
-                    if (isConnected) {
+                    if (isConnected && !isChatShutdown) {
+                        errorToast.innerText = "";
                         msgInput.disabled = false;
                         sendBtn.disabled = false;
                         msgInput.placeholder = "Type a message...";
                         msgInput.focus();
+                    } else if (isChatShutdown) {
+                        errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
+                        msgInput.placeholder = "Chat disabled by moderator...";
                     }
                 } else {
                     errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
@@ -455,11 +480,34 @@
             }, 100);
         }
 
+        // --- CONSOLE ADMIN COMMANDS ---
+
         window.clearMessages = function() {
             if(!isConnected) return;
             const clearCmd = { action: 'CLEAR_PURGE', timestamp: Date.now() };
             client.publish(CHAT_TOPIC, JSON.stringify(clearCmd), { qos: 1 });
             client.publish(HISTORY_TOPIC, JSON.stringify(clearCmd), { retain: true, qos: 1 });
+            console.log("Feed cleared.");
+        };
+
+        window.shutdown = function() {
+            if(!isConnected) return;
+            modShutdownActive = true;
+            const cmd = { action: 'SHUTDOWN', sender: userToken, timestamp: Date.now() };
+            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
+            console.log("Chat shut down. (You can still send messages)");
+        };
+
+        window.activate = function() {
+            if(!isConnected) return;
+            if(!modShutdownActive) {
+                console.warn("Command failed: Chat is not currently shut down by you.");
+                return;
+            }
+            modShutdownActive = false;
+            const cmd = { action: 'ACTIVATE', sender: userToken, timestamp: Date.now() };
+            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
+            console.log("Chat reactivated for everyone.");
         };
 
         sendBtn.addEventListener('click', handleSendMessage);
