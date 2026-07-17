@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>0chan - Network Operations Status</title>
+    <style>
+        :root {
+            --bg: #0f0f12;
+            --surface: #18181c;
+            --border: #2d2d34;
+            --text: #e2e8f0;
+            --text-muted: #64748b;
+            --accent: #a78bfa;
+            --success: #22c55e;
+            --warning: #eab308;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 40px 20px; display: flex; justify-content: center; }
+        
+        .status-container { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 24px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+        .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+        .card { background: var(--surface); border: 1px solid var(--border); padding: 20px; border-radius: 12px; }
+        .card .label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .value { font-size: 1.8rem; font-weight: 700; margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+        
+        .pulse-dot { width: 12px; height: 12px; background: var(--warning); border-radius: 50%; display: inline-block; }
+        .online .pulse-dot { background: var(--success); box-shadow: 0 0 10px var(--success); }
+
+        .table-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .table-title { padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.95rem; }
+        
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+        th, td { padding: 12px 20px; border-bottom: 1px solid var(--border); }
+        th { background: rgba(0,0,0,0.2); color: var(--text-muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+        tr:last-child td { border-bottom: none; }
+        
+        .token-badge { font-family: monospace; background: rgba(167, 139, 250, 0.1); color: var(--accent); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(167, 139, 250, 0.2); }
+        .bot-badge { background: rgba(234, 179, 8, 0.1); color: var(--warning); border-color: rgba(234, 179, 8, 0.2); }
+    </style>
+</head>
+<body>
+
+    <div class="status-container">
+        <div class="header">
+            <div>
+                <h1>0chan SysOps Dashboard</h1>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">Real-time infrastructure cluster vitals</p>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card" id="brokerCard">
+                <div class="label">Broker Handshake</div>
+                <div class="value"><span class="pulse-dot"></span> <span id="brokerStatus">Connecting</span></div>
+            </div>
+            <div class="card">
+                <div class="label">Active Concurrent Nodes</div>
+                <div class="value" id="totalConnected">0</div>
+            </div>
+            <div class="card">
+                <div class="label">Simulated Bot Instances</div>
+                <div class="value" id="botConnected" style="color: var(--warning);">0</div>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-title">Live Node Registry</div>
+            <table id="nodeTable">
+                <thead>
+                    <tr>
+                        <th>User Token / Node ID</th>
+                        <th>Type</th>
+                        <th>Last Ping</th>
+                        <th>Network Delta</th>
+                    </tr>
+                </thead>
+                <tbody id="registryBody">
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 30px;">Awaiting network handshake frames...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script>
+        const brokerStatus = document.getElementById('brokerStatus');
+        const brokerCard = document.getElementById('brokerCard');
+        const totalConnected = document.getElementById('totalConnected');
+        const botConnected = document.getElementById('botConnected');
+        const registryBody = document.getElementById('registryBody');
+
+        const STATUS_TOPIC = 'io/0chan/public/presence_v1';
+        let activeNodes = {};
+
+        // Unique monitor id so it doesn't count itself as a user chat node
+        const monitorClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+            clientId: 'ops_monitor_' + Math.floor(Math.random() * 100000),
+            connectTimeout: 5000
+        });
+
+        monitorClient.on('connect', () => {
+            brokerCard.classList.add('online');
+            brokerStatus.innerText = "Online";
+            monitorClient.subscribe(STATUS_TOPIC);
+        });
+
+        monitorClient.on('close', () => {
+            brokerCard.classList.remove('online');
+            brokerStatus.innerText = "Offline";
+        });
+
+        monitorClient.on('message', (topic, payload) => {
+            try {
+                const data = JSON.parse(payload.toString());
+                if (data && data.user) {
+                    // Log or update node tracking timestamp
+                    activeNodes[data.user] = {
+                        lastSeen: Date.now(),
+                        isBot: data.user.includes('bot')
+                    };
+                    updateDashboard();
+                }
+            } catch (e) {
+                console.warn("Dropped corrupted status packet framework.");
+            }
+        });
+
+        function updateDashboard() {
+            const now = Date.now();
+            const disconnectCutoff = now - 10000; // Drop nodes silent for over 10s
+            
+            let total = 0;
+            let bots = 0;
+            let htmlRows = '';
+
+            // Filter active nodes
+            for (const token in activeNodes) {
+                if (activeNodes[token].lastSeen > disconnectCutoff) {
+                    total++;
+                    if (activeNodes[token].isBot) bots++;
+
+                    const latency = now - activeNodes[token].lastSeen;
+                    const timeString = new Date(activeNodes[token].lastSeen).toLocaleTimeString();
+                    const isBot = activeNodes[token].isBot;
+
+                    htmlRows += `
+                        <tr>
+                            <td><span class="token-badge ${isBot ? 'bot-badge' : ''}">${escapeHTML(token)}</span></td>
+                            <td>${isBot ? '🤖 Stress Agent' : '👤 Human Client'}</td>
+                            <td>${timeString}</td>
+                            <td style="color: #22c55e;">+${latency}ms</td>
+                        </tr>
+                    `;
+                }
+            }
+
+            totalConnected.innerText = total;
+            botConnected.innerText = bots;
+            
+            if (total === 0) {
+                registryBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 30px;">All nodes currently cold.</td></tr>`;
+            } else {
+                registryBody.innerHTML = htmlRows;
+            }
+        }
+
+        // Keep registry freshly culled even when no messages arrive
+        setInterval(updateDashboard, 2000);
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t]));
+        }
+    </script>
+</body>
+</html>
