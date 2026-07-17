@@ -26,7 +26,6 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
         body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; transition: background 0.2s, color 0.2s; position: relative; }
         
-        /* Fixed window indicator for true top-right of your screen placement */
         .global-presence-tag {
             position: fixed;
             top: 20px;
@@ -62,11 +61,9 @@
         .input-wrapper { display: flex; gap: 8px; width: 100%; }
         input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; color: var(--text); font-size: 0.95rem; outline: none; }
         input:focus { border-color: var(--accent); }
-        input:disabled { opacity: 0.6; cursor: not-allowed; }
 
         .send-btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0 18px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.15s; }
         .send-btn:hover { opacity: 0.9; }
-        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         
         .error-toast { color: var(--error); font-size: 0.85rem; min-height: 18px; text-align: center; font-weight: 500; }
         .mobile-blocker { display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px; font-weight: 600; font-size: 1.2rem; }
@@ -74,7 +71,6 @@
 </head>
 <body>
 
-    <!-- Extracted presence layout placed at absolute viewport coordinate parameters -->
     <div class="global-presence-tag">
         <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #22c55e;"></span>
         <span id="onlineCount">Connecting...</span>
@@ -123,12 +119,12 @@
         });
 
         const CHAT_TOPIC = 'io/0chan/public/global_feed_v1';
+        const HISTORY_TOPIC = 'io/0chan/public/history_cache_v1';
         const STATUS_TOPIC = 'io/0chan/public/presence_v1';
 
         let globalMessages = JSON.parse(sessionStorage.getItem('0chan_feed_history')) || [];
         let activePeers = {}; 
 
-        // Generates user identity aesthetic color borders dynamically
         function generateColorFromToken(str) {
             let hash = 0;
             for (let i = 0; i < str.length; i++) {
@@ -151,8 +147,14 @@
             }
         });
 
+        // Initialize preferred theme choice on payload mount
+        if(localStorage.getItem('theme_preference') === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            themeBtn.innerText = 'Light Mode';
+        }
+
         client.on('connect', () => {
-            client.subscribe([CHAT_TOPIC, STATUS_TOPIC]);
+            client.subscribe([CHAT_TOPIC, HISTORY_TOPIC, STATUS_TOPIC]);
             document.getElementById('onlineCount').innerText = "Live";
             errorToast.innerText = "";
             setInterval(() => {
@@ -173,32 +175,30 @@
                     return;
                 }
 
-                if (Array.isArray(incomingData)) {
-                    incomingData.forEach(m => {
-                        if (!globalMessages.some(existing => existing.id === m.id)) {
-                            globalMessages.push(m);
+                // Load initial payload pack array from history topic
+                if (topic === HISTORY_TOPIC && Array.isArray(incomingData)) {
+                    // Only process history sync if our local temporary state is empty
+                    if (globalMessages.length === 0) {
+                        globalMessages = incomingData;
+                        sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
+                        renderMessages(globalMessages);
+                    }
+                    return;
+                }
+
+                // Process active live chats
+                if (topic === CHAT_TOPIC) {
+                    if (!globalMessages.some(m => m.id === incomingData.id)) {
+                        globalMessages.push(incomingData);
+                        if (globalMessages.length > 25) globalMessages = globalMessages.slice(-25);
+                        sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
+                        renderMessages(globalMessages);
+                        
+                        // Let sender append state pack to the history backup topic
+                        if (incomingData.sender === userToken) {
+                            client.publish(HISTORY_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
                         }
-                    });
-                    globalMessages.sort((a, b) => a.timestamp - b.timestamp);
-                    if (globalMessages.length > 25) globalMessages = globalMessages.slice(-25);
-                    sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
-                    renderMessages(globalMessages);
-                    return;
-                }
-
-                if (incomingData.text === 'OVERRIDE_PURGE_EXECUTE') {
-                    globalMessages = [];
-                    sessionStorage.removeItem('0chan_feed_history');
-                    renderMessages([]);
-                    return;
-                }
-
-                if (!globalMessages.some(m => m.id === incomingData.id)) {
-                    globalMessages.push(incomingData);
-                    if (globalMessages.length > 25) globalMessages = globalMessages.slice(-25);
-                    sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
-                    client.publish(CHAT_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
-                    renderMessages(globalMessages);
+                    }
                 }
             } catch(e) {}
         });
@@ -209,7 +209,6 @@
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                // Color layer pipeline mapping back to original unique identifier hashes
                 const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
                 div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
@@ -231,7 +230,8 @@
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
 
-            client.publish(CHAT_TOPIC, JSON.stringify(newMsg));
+            // Single message goes over regular live channel stream 
+            client.publish(CHAT_TOPIC, JSON.stringify(newMsg), { qos: 1 });
             msgInput.value = '';
             msgInput.focus();
         }
