@@ -35,7 +35,7 @@
 
         .message-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
         
-        .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); border-left: 4px solid var(--accent); word-break: break-word; }
+        .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); border-left: 4px solid var(--accent); word-break: break-word; position: relative; }
         .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
         
         .input-area { padding: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
@@ -57,7 +57,7 @@
         </div>
         
         <div class="message-box" id="messageBox">
-            <!-- Messages load here dynamically -->
+            <!-- Messages load dynamically -->
         </div>
 
         <div class="input-area">
@@ -72,8 +72,15 @@
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
 
-        // Using a fresh, uniquely absolute public store key path
-        const DB_URL = "https://kvdb.io/699f7f4Hfdsa90Fasdfjk/0chan_live_v2"; 
+        // Target key prefix container inside kvdb
+        const BUCKET_URL = "https://kvdb.io/699f7f4Hfdsa90Fasdfjk/"; 
+
+        // Establish a unique tracking identifier local to this browser window instance
+        let userToken = localStorage.getItem('user_token');
+        if (!userToken) {
+            userToken = 'usr_' + Math.random().toString(36).substring(2, 15);
+            localStorage.setItem('user_token', userToken);
+        }
 
         themeBtn.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -113,51 +120,64 @@
             return BANNED_PATTERNS.some(pattern => pattern.test(text));
         }
 
-        // Safely pull current database messages without crashing if it's empty
-        async function getMessagesFromServer() {
-            try {
-                const response = await fetch(DB_URL);
-                if (!response.ok) return []; // Return empty array if server is new or 404s
-                
-                const textData = await response.text();
-                if (!textData || textData.trim() === "") return [];
-                
-                const data = JSON.parse(textData);
-                return Array.isArray(data) ? data : [];
-            } catch (err) {
-                console.log("Database fetch mismatch caught safely.");
-                return [];
+        // Generate static unique matching color string from string inputs
+        function generateColorFromToken(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
+            const h = Math.abs(hash) % 360;
+            return `hsl(${h}, 65%, 60%)`;
         }
 
-        // Fetch loop worker
+        // Fetch individual structural keys safely
         async function fetchMessages() {
-            const data = await getMessagesFromServer();
-            renderMessages(data);
-        }
-
-        // Send data out to backend storage
-        async function saveMessages(messageArray) {
             try {
-                await fetch(DB_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(messageArray),
-                    headers: { 'Content-Type': 'application/json' }
+                // List keys with matching prefix
+                const listResponse = await fetch(`${BUCKET_URL}?prefix=msg_`);
+                if (!listResponse.ok) return;
+                
+                const keys = await listResponse.json();
+                if (!Array.isArray(keys) || keys.length === 0) {
+                    messageBox.innerHTML = '';
+                    return;
+                }
+
+                // Gather last 10 sorted sequentially
+                keys.sort();
+                const activeKeys = keys.slice(-10);
+
+                // Batch fetch key contents concurrently
+                const fetchPromises = activeKeys.map(async (key) => {
+                    try {
+                        const res = await fetch(`${BUCKET_URL}${key}`);
+                        if (res.ok) return await res.json();
+                    } catch (e) {}
+                    return null;
                 });
+
+                let loadedMessages = await Promise.all(fetchPromises);
+                loadedMessages = loadedMessages.filter(m => m !== null);
+
+                renderMessages(loadedMessages);
             } catch (err) {
-                showError("Network connection dropped.");
+                console.log("Network dynamic fetch sync drop handled gracefully.");
             }
         }
 
         function renderMessages(messages) {
-            // Keep track of scroll positions to avoid violently resetting user screen on updates
             const isScrolledToBottom = messageBox.scrollHeight - messageBox.clientHeight <= messageBox.scrollTop + 50;
             
             messageBox.innerHTML = '';
             messages.forEach(msg => {
                 const div = document.createElement('div');
                 div.className = 'msg';
-                div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${msg.time}</div>`;
+                
+                // Assign unique color directly to the right outline layout border property
+                const sideColor = generateColorFromToken(msg.sender || 'anon');
+                div.style.borderRight = `4px solid ${sideColor}`;
+
+                div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time)}</div>`;
                 messageBox.appendChild(div);
             });
             
@@ -171,7 +191,7 @@
             setTimeout(() => { errorToast.innerText = ''; }, 5000);
         }
 
-        // Submission Intercept Handler
+        // Handle text field processing
         msgInput.addEventListener('keypress', async (e) => {
             if (e.key === 'Enter') {
                 const text = msgInput.value.trim();
@@ -185,24 +205,27 @@
 
                 msgInput.disabled = true;
 
-                // Safely grab current history array
-                let currentMessages = await getMessagesFromServer();
-
+                // Create atomic incremental unique string timestamp format
+                const timestampId = Date.now();
                 const newMsg = {
                     text: text,
+                    sender: userToken,
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 };
 
-                currentMessages.push(newMsg);
-                
-                // Keep strictly to 10 max
-                if (currentMessages.length > 10) {
-                    currentMessages = currentMessages.slice(-10);
+                try {
+                    // Save down item entry natively under unique path
+                    await fetch(`${BUCKET_URL}msg_${timestampId}`, {
+                        method: 'POST',
+                        body: JSON.stringify(newMsg),
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    // Force display refresh loop directly 
+                    await fetchMessages();
+                } catch (err) {
+                    showError("Network message transmission failure.");
                 }
-
-                // Render locally and push immediately
-                renderMessages(currentMessages);
-                await saveMessages(currentMessages);
 
                 msgInput.value = '';
                 msgInput.disabled = false;
@@ -214,9 +237,9 @@
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
-        // Start pulling immediately, then poll updates every 3 seconds
+        // Sync intervals initialized natively at 3.5 seconds loop limits
         fetchMessages();
-        setInterval(fetchMessages, 3000);
+        setInterval(fetchMessages, 3500);
     </script>
 </body>
 </html>
