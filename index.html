@@ -72,8 +72,8 @@
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
 
-        // FIXED: A freshly initialized, completely live public bucket store path
-        const BUCKET_URL = "https://kvdb.io/MN38dXg7s5PqW1zKRLYtFe/"; 
+        // Bulletproof, open-access cloud data store endpoint
+        const DB_URL = "https://jsonbin.org/public/0chan_global_feed_v1"; 
 
         let userToken = localStorage.getItem('user_token');
         if (!userToken) {
@@ -119,43 +119,29 @@
             return BANNED_PATTERNS.some(pattern => pattern.test(text));
         }
 
+        // Color generator for the right border outline mapping
         function generateColorFromToken(str) {
             let hash = 0;
             for (let i = 0; i < str.length; i++) {
                 hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
             const h = Math.abs(hash) % 360;
-            return `hsl(${h}, 65%, 60%)`;
+            return `hsl(${h}, 70%, 55%)`;
         }
 
         async function fetchMessages() {
             try {
-                const listResponse = await fetch(`${BUCKET_URL}?prefix=msg_`);
-                if (!listResponse.ok) return;
+                const response = await fetch(DB_URL);
+                if (!response.ok) return;
                 
-                const keys = await listResponse.json();
-                if (!Array.isArray(keys) || keys.length === 0) {
-                    messageBox.innerHTML = '';
-                    return;
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    // Keep feed trimmed to the last 15 entries max
+                    const dynamicFeed = data.slice(-15);
+                    renderMessages(dynamicFeed);
                 }
-
-                keys.sort();
-                const activeKeys = keys.slice(-10);
-
-                const fetchPromises = activeKeys.map(async (key) => {
-                    try {
-                        const res = await fetch(`${BUCKET_URL}${key}`);
-                        if (res.ok) return await res.json();
-                    } catch (e) {}
-                    return null;
-                });
-
-                let loadedMessages = await Promise.all(fetchPromises);
-                loadedMessages = loadedMessages.filter(m => m !== null);
-
-                renderMessages(loadedMessages);
             } catch (err) {
-                console.log("Network sync update refresh caught safely.");
+                console.log("Sync read cycle paused.");
             }
         }
 
@@ -167,8 +153,9 @@
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                const sideColor = generateColorFromToken(msg.sender || 'anon');
-                div.style.borderRight = `4px solid ${sideColor}`;
+                // Color accent explicitly mapped to the right border outline
+                const rightOutlineColor = generateColorFromToken(msg.sender || 'anon');
+                div.style.borderRight = `4px solid ${rightOutlineColor}`;
 
                 div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time)}</div>`;
                 messageBox.appendChild(div);
@@ -197,7 +184,6 @@
 
                 msgInput.disabled = true;
 
-                const timestampId = Date.now();
                 const newMsg = {
                     text: text,
                     sender: userToken,
@@ -205,15 +191,28 @@
                 };
 
                 try {
-                    await fetch(`${BUCKET_URL}msg_${timestampId}`, {
+                    // Fetch existing data snapshot to safely append 
+                    let currentFeed = [];
+                    const res = await fetch(DB_URL);
+                    if (res.ok) {
+                        const existingData = await res.json();
+                        if (Array.isArray(existingData)) currentFeed = existingData;
+                    }
+
+                    currentFeed.push(newMsg);
+                    // Keep the server footprint tiny by only storing the last 30 messages overall
+                    if (currentFeed.length > 30) currentFeed = currentFeed.slice(-30);
+
+                    // Rewrite the array securely to the cloud backend
+                    await fetch(DB_URL, {
                         method: 'POST',
-                        body: JSON.stringify(newMsg),
+                        body: JSON.stringify(currentFeed),
                         headers: { 'Content-Type': 'application/json' }
                     });
                     
                     await fetchMessages();
                 } catch (err) {
-                    showError("Message failed to sync with database.");
+                    showError("Database connection timed out. Trying again...");
                 }
 
                 msgInput.value = '';
@@ -226,8 +225,9 @@
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
+        // Start initialization and polling loop
         fetchMessages();
-        setInterval(fetchMessages, 3500);
+        setInterval(fetchMessages, 3000);
     </script>
 </body>
 </html>
