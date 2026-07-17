@@ -72,10 +72,9 @@
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
 
-        // Free Public database bucket endpoint
-        const DB_URL = "https://kvdb.io/699f7f4Hfdsa90Fasdfjk/msg_store"; 
+        // Using a fresh, uniquely absolute public store key path
+        const DB_URL = "https://kvdb.io/699f7f4Hfdsa90Fasdfjk/0chan_live_v2"; 
 
-        // Theme Toggle Logic
         themeBtn.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             if (currentTheme === 'dark') {
@@ -114,22 +113,30 @@
             return BANNED_PATTERNS.some(pattern => pattern.test(text));
         }
 
-        // Fetch messages from server storage
-        async function fetchMessages() {
+        // Safely pull current database messages without crashing if it's empty
+        async function getMessagesFromServer() {
             try {
                 const response = await fetch(DB_URL);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (Array.isArray(data)) {
-                        renderMessages(data);
-                    }
-                }
+                if (!response.ok) return []; // Return empty array if server is new or 404s
+                
+                const textData = await response.text();
+                if (!textData || textData.trim() === "") return [];
+                
+                const data = JSON.parse(textData);
+                return Array.isArray(data) ? data : [];
             } catch (err) {
-                console.log("Storage empty or initializing.");
+                console.log("Database fetch mismatch caught safely.");
+                return [];
             }
         }
 
-        // Send data to server storage
+        // Fetch loop worker
+        async function fetchMessages() {
+            const data = await getMessagesFromServer();
+            renderMessages(data);
+        }
+
+        // Send data out to backend storage
         async function saveMessages(messageArray) {
             try {
                 await fetch(DB_URL, {
@@ -138,11 +145,14 @@
                     headers: { 'Content-Type': 'application/json' }
                 });
             } catch (err) {
-                showError("Network connection timed out.");
+                showError("Network connection dropped.");
             }
         }
 
         function renderMessages(messages) {
+            // Keep track of scroll positions to avoid violently resetting user screen on updates
+            const isScrolledToBottom = messageBox.scrollHeight - messageBox.clientHeight <= messageBox.scrollTop + 50;
+            
             messageBox.innerHTML = '';
             messages.forEach(msg => {
                 const div = document.createElement('div');
@@ -150,7 +160,10 @@
                 div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${msg.time}</div>`;
                 messageBox.appendChild(div);
             });
-            messageBox.scrollTop = messageBox.scrollHeight;
+            
+            if (isScrolledToBottom) {
+                messageBox.scrollTop = messageBox.scrollHeight;
+            }
         }
 
         function showError(text) {
@@ -158,7 +171,7 @@
             setTimeout(() => { errorToast.innerText = ''; }, 5000);
         }
 
-        // Intercept Submission
+        // Submission Intercept Handler
         msgInput.addEventListener('keypress', async (e) => {
             if (e.key === 'Enter') {
                 const text = msgInput.value.trim();
@@ -172,14 +185,8 @@
 
                 msgInput.disabled = true;
 
-                let currentMessages = [];
-                try {
-                    const res = await fetch(DB_URL);
-                    if (res.ok) {
-                        const parsed = await res.json();
-                        if (Array.isArray(parsed)) currentMessages = parsed;
-                    }
-                } catch(e){}
+                // Safely grab current history array
+                let currentMessages = await getMessagesFromServer();
 
                 const newMsg = {
                     text: text,
@@ -188,11 +195,12 @@
 
                 currentMessages.push(newMsg);
                 
-                // Enforce the 10 message limit structure safely
+                // Keep strictly to 10 max
                 if (currentMessages.length > 10) {
                     currentMessages = currentMessages.slice(-10);
                 }
 
+                // Render locally and push immediately
                 renderMessages(currentMessages);
                 await saveMessages(currentMessages);
 
@@ -206,9 +214,9 @@
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
-        // Global Loop Syncing Every 4 seconds
+        // Start pulling immediately, then poll updates every 3 seconds
         fetchMessages();
-        setInterval(fetchMessages, 4000);
+        setInterval(fetchMessages, 3000);
     </script>
 </body>
 </html>
