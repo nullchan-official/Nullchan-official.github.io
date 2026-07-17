@@ -56,6 +56,7 @@
         
         .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); word-break: break-word; position: relative; }
         .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
+        .msg .sender-id { font-size: 0.75rem; font-weight: 700; margin-bottom: 4px; display: block; opacity: 0.9; }
         
         .loading-notice { text-align: center; color: var(--text-muted); font-size: 0.95rem; margin: auto; font-style: italic; }
 
@@ -142,10 +143,21 @@
         const themeBtn = document.getElementById('themeBtn');
         const presenceDot = document.getElementById('presenceDot');
 
+        // Token generation
         const cryptoArray = new Uint32Array(1);
         window.crypto.getRandomValues(cryptoArray);
-        let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36);
+        let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
         localStorage.setItem('user_token', userToken);
+
+        // --- IP FETCHING FOR PERSISTENT COLORS ---
+        let userIP = localStorage.getItem('cached_ip') || userToken;
+        fetch('https://api64.ipify.org?format=json')
+            .then(response => response.json())
+            .then(data => {
+                userIP = data.ip;
+                localStorage.setItem('cached_ip', userIP);
+            })
+            .catch(err => console.warn("Could not fetch IP, falling back to token."));
 
         const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
             clientId: userToken + '_' + Math.floor(Math.random() * 100000),
@@ -162,14 +174,33 @@
         let activePeers = {}; 
         let isConnected = false;
         let receivedHistoryPayload = false;
+        
+        let currentOnlineCount = 1;
+        let showingUsernames = false; // Tracks if the >16 threshold is met
 
         // --- ANTI-SPAM & ANTI-BOT SYSTEM STATE ---
         let userMessageTimestamps = [];
         let isRateLimited = false;
 
+        // --- STRICT DISTINCT COLOR ENGINE ---
+        const DISTINCT_COLORS = [
+            '#ef4444', '#3b82f6', '#22c55e', '#eab308', 
+            '#a855f7', '#ec4899', '#14b8a6', '#f97316', 
+            '#06b6d4', '#6366f1', '#84cc16', '#f43f5e', 
+            '#d946ef', '#f59e0b', '#10b981', '#0ea5e9'
+        ];
+
+        function getColorFromIdentifier(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % DISTINCT_COLORS.length;
+            return DISTINCT_COLORS[index];
+        }
+
         // --- CONTENT MODERATION FILTER ENGINE ---
         function containsBannedContent(inputText) {
-            // Normalize characters to clear out leetspeak filters
             let cleanText = inputText.toLowerCase();
             
             const substitutions = {
@@ -177,25 +208,15 @@
                 '@': 'a', '5': 's', '$': 's', '7': 't', 'x': 'x',
                 '(': 'c', '[': 'c'
             };
-            
             cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
-            
-            // REMOVE ALL SPACES AND PUNCTUATION (Destroys evasions like "w h o r e")
             cleanText = cleanText.replace(/[^a-z0-9]/g, '');
 
-            const bannedWords = [
-                'goon', 'whore', 'slut', 
-                'discord', 'tiktok', 'snapchat', 'snap'
-            ];
+            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap'];
 
-            // Scan if normalized payload contains any blocked keywords
             for (const word of bannedWords) {
-                if (cleanText.includes(word)) {
-                    return true;
-                }
+                if (cleanText.includes(word)) return true;
             }
 
-            // Pattern recognition check for emails, phone numbers and clear addresses
             const emailPattern = /[a-z0-9._%+-]+@gmail\.com/i;
             const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
             const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
@@ -203,17 +224,7 @@
             if (emailPattern.test(inputText) || phonePattern.test(inputText) || addressPattern.test(cleanText)) {
                 return true;
             }
-
             return false;
-        }
-
-        function generateColorFromToken(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const h = Math.abs(hash) % 360;
-            return `hsl(${h}, 65%, 55%)`;
         }
 
         themeBtn.addEventListener('click', () => {
@@ -251,11 +262,8 @@
                 msgInput.placeholder = "Type a message...";
             }
 
-            // Fallback timeout: if history is corrupted or empty, open the room anyway after 1.5 seconds
             setTimeout(() => {
-                if (!receivedHistoryPayload) {
-                    renderMessages(globalMessages);
-                }
+                if (!receivedHistoryPayload) renderMessages(globalMessages);
             }, 1500);
 
             client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
@@ -280,13 +288,9 @@
 
         client.on('message', (topic, payload) => {
             let incomingData;
-            
-            // Bulletproof Parse Strategy: Bad data is intercepted here and dropped cleanly
-            try {
-                incomingData = JSON.parse(payload.toString());
-            } catch(e) {
+            try { incomingData = JSON.parse(payload.toString()); } 
+            catch(e) {
                 console.warn(`Ignored malformed packet on ${topic}`);
-                // If the history cache itself is what was broken, force open the chat room clear
                 if (topic === HISTORY_TOPIC) {
                     receivedHistoryPayload = true;
                     renderMessages([]);
@@ -300,7 +304,15 @@
                     const cutoff = Date.now() - 10000;
                     let count = 0;
                     for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
+                    
                     document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
+                    
+                    // Display usernames dynamically if > 16 people are online (to prevent color collisions)
+                    let shouldShowUsernames = count > 16;
+                    if (showingUsernames !== shouldShowUsernames) {
+                        showingUsernames = shouldShowUsernames;
+                        renderMessages(globalMessages); // Re-render feed with or without tags
+                    }
                     return;
                 }
 
@@ -323,9 +335,8 @@
                         return;
                     }
                     if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
-                        if (containsBannedContent(incomingData.text)) {
-                            return; // Silently drop matching remote client traffic rules
-                        }
+                        if (containsBannedContent(incomingData.text)) return; 
+                        
                         globalMessages.push(incomingData);
                         if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
                         renderMessages(globalMessages);
@@ -347,14 +358,23 @@
             }
             messageBox.innerHTML = '';
             msgs.forEach(msg => {
-                if (!msg.text) return; // Skip broken structural elements safely
+                if (!msg.text) return; 
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
+                // Color matches their IP (or token fallback), guaranteeing refresh consistency
+                const identifierToHash = msg.userIpIdentifier || msg.sender || 'anon';
+                const leftOutlineColor = getColorFromIdentifier(identifierToHash);
+                
                 div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
-                div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
+                // Inject username tag ONLY if threshold is crossed (more than 16 users)
+                let nameTagHTML = '';
+                if (showingUsernames) {
+                    nameTagHTML = `<span class="sender-id" style="color: ${leftOutlineColor}">${escapeHTML(msg.sender || 'anon')}</span>`;
+                }
+
+                div.innerHTML = `${nameTagHTML}<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
                 messageBox.appendChild(div);
             });
             messageBox.scrollTop = messageBox.scrollHeight;
@@ -367,25 +387,18 @@
             const text = msgInput.value.trim();
             if (!text) return;
 
-            // --- RATELIMIT METRIC SCANNER ---
-            // Log timestamp
+            // --- RATELIMIT SCANNER ---
             userMessageTimestamps.push(now);
-            // Retain only the last 5 messages for interval computation
-            if (userMessageTimestamps.length > 5) {
-                userMessageTimestamps.shift();
-            }
+            if (userMessageTimestamps.length > 5) userMessageTimestamps.shift();
 
-            // Check if user has generated 5 entries down within a fast rolling window
             if (userMessageTimestamps.length === 5) {
                 let triggersSpamFlag = true;
                 for (let i = 1; i < userMessageTimestamps.length; i++) {
-                    // Check if consecutive messages are separated by less than 2 seconds (2000ms)
                     if (userMessageTimestamps[i] - userMessageTimestamps[i - 1] >= 2000) {
                         triggersSpamFlag = false;
                         break;
                     }
                 }
-
                 if (triggersSpamFlag) {
                     triggerRateLimit();
                     msgInput.value = '';
@@ -393,7 +406,6 @@
                 }
             }
 
-            // Text moderation validator
             if (containsBannedContent(text)) {
                 errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
                 setTimeout(() => { if(!isRateLimited) errorToast.innerText = ""; }, 4000);
@@ -405,6 +417,7 @@
                 id: userToken + '_' + Date.now() + '_' + Math.floor(Math.random()*1000),
                 timestamp: now,
                 sender: userToken,
+                userIpIdentifier: userIP, // Bound to their IP for consistent coloring
                 text: text,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
