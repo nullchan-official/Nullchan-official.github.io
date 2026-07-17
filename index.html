@@ -35,7 +35,8 @@
 
         .message-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
         
-        .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); border-left: 4px solid var(--accent); word-break: break-word; position: relative; }
+        /* FIXED: Dynamic color boundary is now cleanly on the LEFT outline border */
+        .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); word-break: break-word; position: relative; }
         .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
         
         .input-area { padding: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
@@ -72,8 +73,8 @@
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
 
-        // Global unrestricted open cluster URL
-        const DB_ENDPOINT = "https://api.allorigins.win/raw?url=https://pastebin.com/raw/7g9D6Pxt";
+        // FIXED: Live database endpoint allowing fully open unrestricted reads/writes
+        const STORAGE_API = "https://kvb.co/api/v1/0chan_live_feed";
 
         let userToken = localStorage.getItem('user_token');
         if (!userToken) {
@@ -81,10 +82,11 @@
             localStorage.setItem('user_token', userToken);
         }
 
-        // Keep local memory fallback active so posting feels instant if cloud nodes lag
-        let localFeedCache = JSON.parse(sessionStorage.getItem('local_chan_cache')) || [
-            { text: "Welcome to 0chan. Stream initialized safely.", sender: "system", time: "00:00" }
-        ];
+        // Spam Prevention Variables
+        let lastPostedMessage = "";
+        let duplicateCount = 0;
+        let lastPostTime = 0;
+        let countdownInterval = null;
 
         themeBtn.addEventListener('click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -97,7 +99,6 @@
             }
         });
 
-        // Content Filter System
         const BANNED_PATTERNS = [
             /\bn[i1l|]gg[a4e3r]s?\b/i, /\bsl[u0]t[s]?\b/i, /\bwh[o0]r[e3][s]?\b/i,
             /\bc[u0]m\b/i, /\bs[e3]m[3e]n\b/i, /\bd[i1l|]ck[s]?\b/i, /\bp[u0]ss[y1i]\b/i, /\bg[@a]y\b/i,
@@ -116,27 +117,21 @@
                 hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
             const h = Math.abs(hash) % 360;
-            return `hsl(${h}, 75%, 60%)`;
+            return `hsl(${h}, 70%, 55%)`;
         }
 
         async function fetchMessages() {
             try {
-                // Read from open mirror network channel to bypass gateway timeouts
-                const response = await fetch(`${DB_ENDPOINT}&nocache=${Date.now()}`);
+                const response = await fetch(STORAGE_API);
                 if (response.ok) {
-                    const cloudData = await response.json();
-                    if (Array.isArray(cloudData) && cloudData.length > 0) {
-                        // Merge remote database states cleanly with existing arrays
-                        const uniqueMap = new Map();
-                        localFeedCache.forEach(m => uniqueMap.set(m.text + m.time, m));
-                        cloudData.forEach(m => uniqueMap.set(m.text + m.time, m));
-                        localFeedCache = Array.from(uniqueMap.values()).slice(-15);
+                    const data = await response.json();
+                    if (Array.isArray(data)) {
+                        renderMessages(data.slice(-15));
                     }
                 }
             } catch (err) {
-                console.log("Database cycle self-healed.");
+                console.log("Feed read failed to update cloud frames.");
             }
-            renderMessages(localFeedCache);
         }
 
         function renderMessages(messages) {
@@ -147,9 +142,9 @@
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                // Set the accent color on the right outline layout border
-                const customSideColor = generateColorFromToken(msg.sender || 'anon');
-                div.style.borderRight = `4px solid ${customSideColor}`;
+                // FIXED: Color configuration now maps to the LEFT border outline element
+                const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
+                div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
                 div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time)}</div>`;
                 messageBox.appendChild(div);
@@ -162,13 +157,56 @@
 
         function showError(text) {
             errorToast.innerText = text;
-            setTimeout(() => { errorToast.innerText = ''; }, 4000);
+        }
+
+        function clearError() {
+            errorToast.innerText = '';
+        }
+
+        function startCooldown(durationMs) {
+            msgInput.disabled = true;
+            let remaining = durationMs / 1000;
+            
+            showError(`Please wait ${remaining.toFixed(1)}s to post anything again`);
+            
+            clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                remaining -= 0.1;
+                if (remaining <= 0) {
+                    clearInterval(countdownInterval);
+                    clearError();
+                    msgInput.disabled = false;
+                    msgInput.focus();
+                } else {
+                    showError(`Please wait ${remaining.toFixed(1)}s to post anything again`);
+                }
+            }, 100);
         }
 
         msgInput.addEventListener('keypress', async (e) => {
             if (e.key === 'Enter') {
                 const text = msgInput.value.trim();
                 if (!text) return;
+
+                const now = Date.now();
+
+                // FIXED: Message rate limitation test (posted less than 3s apart)
+                if (lastPostTime && (now - lastPostTime) < 3000) {
+                    startCooldown(5000); // Trigger a 5.0s decimal countdown lock out
+                    return;
+                }
+
+                // FIXED: Duplicate Content structural safety test
+                if (text === lastPostedMessage) {
+                    duplicateCount++;
+                    if (duplicateCount >= 2) {
+                        showError("Please edit your message, this error is made to prevent SPAM BOTS");
+                        return;
+                    }
+                } else {
+                    duplicateCount = 0;
+                    clearError();
+                }
 
                 if (isContentBanned(text)) {
                     showError("This message cannot be posted since it contains a banned word.");
@@ -184,20 +222,34 @@
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 };
 
-                // Push locally instantly so user sees zero latency
-                localFeedCache.push(newMsg);
-                if (localFeedCache.length > 15) localFeedCache = localFeedCache.slice(-15);
-                sessionStorage.setItem('local_chan_cache', JSON.stringify(localFeedCache));
-                renderMessages(localFeedCache);
-
                 try {
-                    // Post cleanly into storage mirror routing channels
-                    await fetch('https://api.allorigins.win/raw?url=https://api.countapi.xyz/hit/0chan_feed/visits', {
-                        mode: 'no-cors'
-                    });
-                } catch (e) {}
+                    let currentFeed = [];
+                    const res = await fetch(STORAGE_API);
+                    if (res.ok) {
+                        const existingData = await res.json();
+                        if (Array.isArray(existingData)) currentFeed = existingData;
+                    }
 
-                msgInput.value = '';
+                    currentFeed.push(newMsg);
+                    if (currentFeed.length > 20) currentFeed = currentFeed.slice(-20);
+
+                    // Push the updated payload straight up to public storage
+                    await fetch(STORAGE_API, {
+                        method: 'POST',
+                        body: JSON.stringify(currentFeed),
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    // Track anti-spam markers after successful post verification
+                    lastPostedMessage = text;
+                    lastPostTime = Date.now();
+
+                    await fetchMessages();
+                    msgInput.value = '';
+                } catch (err) {
+                    showError("Network post dropped. Please try resubmitting.");
+                }
+
                 msgInput.disabled = false;
                 msgInput.focus();
             }
@@ -208,7 +260,7 @@
         }
 
         fetchMessages();
-        setInterval(fetchMessages, 3500);
+        setInterval(fetchMessages, 3000);
     </script>
 </body>
 </html>
