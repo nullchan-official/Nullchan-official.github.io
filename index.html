@@ -62,7 +62,6 @@
                     <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #22c55e;"></span>
                     <span id="onlineCount">Connecting...</span>
                 </div>
-                <button class="theme-toggle" id="notifBtn" style="background: transparent; border-color: var(--border);">Enable Notifications</button>
             </div>
         </div>
         
@@ -86,12 +85,10 @@
         const msgInput = document.getElementById('msgInput');
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
-        const notifBtn = document.getElementById('notifBtn');
 
         let userToken = localStorage.getItem('user_token') || 'usr_' + Math.random().toString(36).substring(2, 15);
         localStorage.setItem('user_token', userToken);
 
-        // --- UPDATED CONNECTION STRING FOR GLOBAL PUBLIC ACCESS ---
         const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
             clientId: userToken + '_' + Math.floor(Math.random() * 1000),
             connectTimeout: 5000,
@@ -101,8 +98,8 @@
         const CHAT_TOPIC = 'io/0chan/public/global_feed_v1';
         const STATUS_TOPIC = 'io/0chan/public/presence_v1';
 
+        // Read or build empty structural feed logs locally
         let globalMessages = JSON.parse(sessionStorage.getItem('0chan_feed_history')) || [];
-        let notificationsEnabled = false;
         let activePeers = {}; 
 
         themeBtn.addEventListener('click', () => {
@@ -129,9 +126,10 @@
 
         client.on('message', (topic, payload) => {
             try {
-                const data = JSON.parse(payload.toString());
+                const incomingData = JSON.parse(payload.toString());
+                
                 if (topic === STATUS_TOPIC) {
-                    activePeers[data.user] = Date.now();
+                    activePeers[incomingData.user] = Date.now();
                     const cutoff = Date.now() - 10000;
                     let count = 0;
                     for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
@@ -139,17 +137,34 @@
                     return;
                 }
 
-                if (data.text === 'OVERRIDE_PURGE_EXECUTE') {
+                // If receiving a compiled block payload list from history sync pipelines
+                if (Array.isArray(incomingData)) {
+                    incomingData.forEach(m => {
+                        if (!globalMessages.some(existing => existing.id === m.id)) {
+                            globalMessages.push(m);
+                        }
+                    });
+                    globalMessages.sort((a, b) => a.timestamp - b.timestamp);
+                    if (globalMessages.length > 25) globalMessages = globalMessages.slice(-25);
+                    sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
+                    renderMessages(globalMessages);
+                    return;
+                }
+
+                if (incomingData.text === 'OVERRIDE_PURGE_EXECUTE') {
                     globalMessages = [];
                     sessionStorage.removeItem('0chan_feed_history');
                     renderMessages([]);
                     return;
                 }
 
-                if (!globalMessages.some(m => m.id === data.id)) {
-                    globalMessages.push(data);
-                    if (globalMessages.length > 20) globalMessages = globalMessages.slice(-20);
+                if (!globalMessages.some(m => m.id === incomingData.id)) {
+                    globalMessages.push(incomingData);
+                    if (globalMessages.length > 25) globalMessages = globalMessages.slice(-25);
                     sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
+                    
+                    // Maintain state across arrivals by caching the current history array directly on the broker
+                    client.publish(CHAT_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
                     renderMessages(globalMessages);
                 }
             } catch(e) {}
@@ -170,11 +185,15 @@
             if (e.key === 'Enter') {
                 const text = msgInput.value.trim();
                 if (!text) return;
-                client.publish(CHAT_TOPIC, JSON.stringify({
+                
+                const newMsg = {
                     id: userToken + '_' + Date.now(),
+                    timestamp: Date.now(),
                     text: text,
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                }));
+                };
+
+                client.publish(CHAT_TOPIC, JSON.stringify(newMsg));
                 msgInput.value = '';
             }
         });
