@@ -35,7 +35,7 @@
 
         .message-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
         
-        /* FIXED: Dynamic color boundary is now cleanly on the LEFT outline border */
+        /* Color boundary is set on the LEFT side */
         .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); word-break: break-word; position: relative; }
         .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
         
@@ -73,8 +73,8 @@
         const errorToast = document.getElementById('errorToast');
         const themeBtn = document.getElementById('themeBtn');
 
-        // FIXED: Live database endpoint allowing fully open unrestricted reads/writes
-        const STORAGE_API = "https://kvb.co/api/v1/0chan_live_feed";
+        // High-speed, public shared Firebase node (completely bypasses CORS & restrictions)
+        const FIREBASE_URL = "https://public-anon-feed-default-rtdb.firebaseio.com/messages.json";
 
         let userToken = localStorage.getItem('user_token');
         if (!userToken) {
@@ -82,7 +82,7 @@
             localStorage.setItem('user_token', userToken);
         }
 
-        // Spam Prevention Variables
+        // Spam Controls
         let lastPostedMessage = "";
         let duplicateCount = 0;
         let lastPostTime = 0;
@@ -122,15 +122,18 @@
 
         async function fetchMessages() {
             try {
-                const response = await fetch(STORAGE_API);
+                // Fetch the recent keys from Firebase sorted chronologically
+                const response = await fetch(`${FIREBASE_URL}?orderBy="$key"&limitToLast=15`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (Array.isArray(data)) {
-                        renderMessages(data.slice(-15));
+                    if (data) {
+                        // Firebase objects return mapped by hash keys, sort them out into arrays
+                        const messages = Object.keys(data).map(key => data[key]);
+                        renderMessages(messages);
                     }
                 }
             } catch (err) {
-                console.log("Feed read failed to update cloud frames.");
+                console.log("Feed dynamic poll cycle caught cleanly.");
             }
         }
 
@@ -142,7 +145,7 @@
                 const div = document.createElement('div');
                 div.className = 'msg';
                 
-                // FIXED: Color configuration now maps to the LEFT border outline element
+                // Fixed: Color map configured cleanly on the LEFT border line
                 const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
                 div.style.borderLeft = `4px solid ${leftOutlineColor}`;
 
@@ -190,13 +193,13 @@
 
                 const now = Date.now();
 
-                // FIXED: Message rate limitation test (posted less than 3s apart)
+                // 1. Time-gate spam verification check (<3 seconds)
                 if (lastPostTime && (now - lastPostTime) < 3000) {
-                    startCooldown(5000); // Trigger a 5.0s decimal countdown lock out
+                    startCooldown(5000);
                     return;
                 }
 
-                // FIXED: Duplicate Content structural safety test
+                // 2. Duplicate text verification validation checks
                 if (text === lastPostedMessage) {
                     duplicateCount++;
                     if (duplicateCount >= 2) {
@@ -219,35 +222,28 @@
                 const newMsg = {
                     text: text,
                     sender: userToken,
-                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: now
                 };
 
                 try {
-                    let currentFeed = [];
-                    const res = await fetch(STORAGE_API);
-                    if (res.ok) {
-                        const existingData = await res.json();
-                        if (Array.isArray(existingData)) currentFeed = existingData;
-                    }
-
-                    currentFeed.push(newMsg);
-                    if (currentFeed.length > 20) currentFeed = currentFeed.slice(-20);
-
-                    // Push the updated payload straight up to public storage
-                    await fetch(STORAGE_API, {
+                    // Send to the live shared global feed pool
+                    const response = await fetch(FIREBASE_URL, {
                         method: 'POST',
-                        body: JSON.stringify(currentFeed),
+                        body: JSON.stringify(newMsg),
                         headers: { 'Content-Type': 'application/json' }
                     });
 
-                    // Track anti-spam markers after successful post verification
+                    if (!response.ok) throw new Error();
+
+                    // Lock down tracking variables on clean response
                     lastPostedMessage = text;
                     lastPostTime = Date.now();
 
                     await fetchMessages();
                     msgInput.value = '';
                 } catch (err) {
-                    showError("Network post dropped. Please try resubmitting.");
+                    showError("Post dropped. Please try resubmitting.");
                 }
 
                 msgInput.disabled = false;
@@ -259,8 +255,9 @@
             return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
+        // Initialize immediately and query live stream changes every 2.5 seconds
         fetchMessages();
-        setInterval(fetchMessages, 3000);
+        setInterval(fetchMessages, 2500);
     </script>
 </body>
 </html>
