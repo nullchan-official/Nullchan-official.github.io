@@ -211,7 +211,7 @@
             cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
             cleanText = cleanText.replace(/[^a-z0-9]/g, '');
 
-            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga', '.com', '.gg', '.github', '.co', '.io', '.ma', '.uk', '.fr', '.gov', '.org', '.net', '.app', '.xyz', '.be', '.de', '.cn', '.edu', '.info', '.ca', '.tw', '.in', '.br', '.cloud'];
+            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga', 'com', 'gg', 'github', 'co', 'io', 'ma', 'uk', 'fr', 'gov', 'org', 'net', 'app', 'xyz', 'be', 'de', 'cn', 'edu', 'info', 'ca', 'tw', 'in', 'br', 'cloud'];
 
             for (const word of bannedWords) {
                 if (cleanText.includes(word)) return true;
