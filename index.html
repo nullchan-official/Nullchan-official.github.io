@@ -66,9 +66,7 @@
             </div>
         </div>
         
-        <div class="message-box" id="messageBox">
-            <!-- Messages load dynamically -->
-        </div>
+        <div class="message-box" id="messageBox"></div>
 
         <div class="input-area">
             <div class="error-toast" id="errorToast"></div>
@@ -76,15 +74,12 @@
         </div>
     </div>
 
-    <!-- Swap out Pusher for a fully open public MQTT web client library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
-        // --- MOBILE COMPATIBILITY DEVICE CHECK ---
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
-        
         if (isMobile) {
             document.getElementById('appContainer').outerHTML = '<div class="mobile-blocker" style="display: flex;">The site is not compatible with mobile yet :/ sorry</div>';
-            throw new Error("Execution halted: Mobile device detected."); 
+            throw new Error("Execution halted."); 
         }
 
         const messageBox = document.getElementById('messageBox');
@@ -93,45 +88,26 @@
         const themeBtn = document.getElementById('themeBtn');
         const notifBtn = document.getElementById('notifBtn');
 
-        // Theme preference management
-        const savedTheme = localStorage.getItem('theme_preference');
-        if (savedTheme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            themeBtn.innerText = 'Light Mode';
-        } else {
-            document.documentElement.removeAttribute('data-theme');
-            themeBtn.innerText = 'Dark Mode';
-        }
+        let userToken = localStorage.getItem('user_token') || 'usr_' + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('user_token', userToken);
 
-        // Generate unique static client device ID tokens safely
-        let userToken = localStorage.getItem('user_token');
-        if (!userToken) {
-            userToken = 'usr_' + Math.random().toString(36).substring(2, 15);
-            localStorage.setItem('user_token', userToken);
-        }
-
-        // --- CONNECT TO A TRULY OPEN PUBLIC BROKER HUB ---
-        // This connects over secure WebSockets with zero API authorization token locks.
-        const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt', {
-            clientId: userToken + '_' + Math.floor(Math.random() * 1000)
+        // --- UPDATED CONNECTION STRING FOR GLOBAL PUBLIC ACCESS ---
+        const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+            clientId: userToken + '_' + Math.floor(Math.random() * 1000),
+            connectTimeout: 5000,
+            reconnectPeriod: 2000
         });
 
-        const CHAT_TOPIC = 'nullchan/global/feed/v1';
-        const STATUS_TOPIC = 'nullchan/global/presence';
+        const CHAT_TOPIC = 'io/0chan/public/global_feed_v1';
+        const STATUS_TOPIC = 'io/0chan/public/presence_v1';
 
         let globalMessages = JSON.parse(sessionStorage.getItem('0chan_feed_history')) || [];
         let notificationsEnabled = false;
         let activePeers = {}; 
 
-        let lastPostedMessage = "";
-        let duplicateCount = 0;
-        let lastPostTime = 0;
-        let baseCooldown = 1000; 
-        let countdownInterval = null;
-
         themeBtn.addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            if (currentTheme === 'dark') {
+            const isDark = document.documentElement.hasAttribute('data-theme');
+            if (isDark) {
                 document.documentElement.removeAttribute('data-theme');
                 themeBtn.innerText = 'Dark Mode';
                 localStorage.setItem('theme_preference', 'light');
@@ -142,241 +118,69 @@
             }
         });
 
-        const BANNED_PATTERNS = [
-            /\bn[i1l|]gg[a4e3r]s?\b/i, /\bsl[u0]t[s]?\b/i, /\bwh[o0]r[e3][s]?\b/i,
-            /\bc[u0]m\b/i, /\bs[e3]m[3e]n\b/i, /\bd[i1l|]ck[s]?\b/i, /\bp[u0]ss[y1i]\b/i, /\bg[@a]y\b/i,
-            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/,
-            /https?:\/\/[^\s]+/i, /\b(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\b/i,
-            /\bdiscord\b/i, /\bsnapchat\b/i, /\binstagram\b/i, /\big\b/i, /\btwitter\b/i, /\btiktok\b/i
-        ];
-
-        function isContentBanned(text) {
-            return BANNED_PATTERNS.some(pattern => pattern.test(text));
-        }
-
-        function generateColorFromToken(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const h = Math.abs(hash) % 360;
-            return `hsl(${h}, 70%, 55%)`;
-        }
-
-        // Handle network connection initialization safely
         client.on('connect', () => {
             client.subscribe([CHAT_TOPIC, STATUS_TOPIC]);
-            clearError();
-            
-            // Broadcast your status package so everyone else registers you are active
+            document.getElementById('onlineCount').innerText = "Live";
+            errorToast.innerText = "";
             setInterval(() => {
                 client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
             }, 4000);
         });
 
-        client.on('error', () => {
-            showError("Network relay dropped. reconnecting...");
-        });
-
-        // Core processing loop for incoming real-time socket events
         client.on('message', (topic, payload) => {
             try {
                 const data = JSON.parse(payload.toString());
-
-                // 1. Process Live Presence Ping Checks
                 if (topic === STATUS_TOPIC) {
                     activePeers[data.user] = Date.now();
-                    pruneAndCountActiveUsers();
+                    const cutoff = Date.now() - 10000;
+                    let count = 0;
+                    for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
+                    document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
                     return;
                 }
 
-                // 2. Process Admin Purge Overrides
-                if (data.text === 'OVERRIDE_PURGE_EXECUTE' && data.sender === 'SYSTEM_ADMIN_OVERRIDE') {
+                if (data.text === 'OVERRIDE_PURGE_EXECUTE') {
                     globalMessages = [];
                     sessionStorage.removeItem('0chan_feed_history');
-                    renderMessages(globalMessages);
-                    showError("Message history cleared by administrator console command.");
-                    setTimeout(clearError, 5000);
+                    renderMessages([]);
                     return;
                 }
 
-                // 3. Process Standard Message Appends
                 if (!globalMessages.some(m => m.id === data.id)) {
                     globalMessages.push(data);
                     if (globalMessages.length > 20) globalMessages = globalMessages.slice(-20);
                     sessionStorage.setItem('0chan_feed_history', JSON.stringify(globalMessages));
                     renderMessages(globalMessages);
-
-                    if (notificationsEnabled && data.sender !== userToken) {
-                        playBeepSound();
-                        new Notification("NullChan", { body: data.text, icon: "https://fav.farm/💬" });
-                    }
                 }
-            } catch (err) {
-                console.error("Frame read error:", err);
-            }
+            } catch(e) {}
         });
 
-        function pruneAndCountActiveUsers() {
-            const cutoff = Date.now() - 10000; // Anyone silent for more than 10s is declared inactive
-            let count = 0;
-            for (const user in activePeers) {
-                if (activePeers[user] > cutoff) count++;
-                else delete activePeers[user];
-            }
-            document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online!`;
-        }
-
-        function playBeepSound() {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            function triggerTone(time) {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, time);
-                gain.gain.setValueAtTime(0.1, time);
-                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start(time);
-                osc.stop(time + 0.1);
-            }
-            const now = audioCtx.currentTime;
-            triggerTone(now);
-            triggerTone(now + 0.15);
-        }
-
-        notifBtn.addEventListener('click', async () => {
-            if (notificationsEnabled) {
-                notificationsEnabled = false;
-                notifBtn.innerText = "Enable Notifications";
-                return;
-            }
-
-            const warningText = "THIS IS AN ANNONYMOUS PUBLIC WEBSITE, you might get spam notifications and get annoying.\n\nPress 'OK' if you know what you are doing, or 'Cancel' to back out.";
-            const userConfirmed = confirm(warningText);
-
-            if (userConfirmed) {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    notificationsEnabled = true;
-                    notifBtn.innerText = "Disable Notifications";
-                } else {
-                    alert("Permissions denied. Please allow notification rights manually.");
-                }
-            }
-        });
-
-        // CONSOLE COMMAND METHOD WIPE EXPOSURE
-        window.clearmessages = function() {
-            const validationPackage = {
-                id: 'sys_' + Date.now(),
-                text: 'OVERRIDE_PURGE_EXECUTE',
-                sender: 'SYSTEM_ADMIN_OVERRIDE',
-                time: 'SYSTEM'
-            };
-            client.publish(CHAT_TOPIC, JSON.stringify(validationPackage));
-            console.log("Global purge packet issued cleanly to all active endpoints.");
-        };
-
-        function renderMessages(messages) {
-            const isScrolledToBottom = messageBox.scrollHeight - messageBox.clientHeight <= messageBox.scrollTop + 50;
+        function renderMessages(msgs) {
             messageBox.innerHTML = '';
-            
-            messages.forEach(msg => {
+            msgs.forEach(msg => {
                 const div = document.createElement('div');
                 div.className = 'msg';
-                
-                const leftOutlineColor = generateColorFromToken(msg.sender || 'anon');
-                div.style.borderLeft = `4px solid ${leftOutlineColor}`;
-
                 div.innerHTML = `<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time)}</div>`;
                 messageBox.appendChild(div);
             });
-            
-            if (isScrolledToBottom) {
-                messageBox.scrollTop = messageBox.scrollHeight;
-            }
+            messageBox.scrollTop = messageBox.scrollHeight;
         }
 
-        function showError(text) {
-            errorToast.innerText = text;
-        }
-
-        function clearError() {
-            errorToast.innerText = '';
-        }
-
-        function startCooldown(durationMs) {
-            msgInput.disabled = true;
-            let remaining = durationMs / 1000;
-            showError(`Please wait ${remaining.toFixed(1)}s to post anything again`);
-            
-            clearInterval(countdownInterval);
-            countdownInterval = setInterval(() => {
-                remaining -= 0.1;
-                if (remaining <= 0) {
-                    clearInterval(countdownInterval);
-                    clearError();
-                    msgInput.disabled = false;
-                    msgInput.focus();
-                } else {
-                    showError(`Please wait ${remaining.toFixed(1)}s to post anything again`);
-                }
-            }, 100);
-        }
-
-        msgInput.addEventListener('keypress', async (e) => {
+        msgInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 const text = msgInput.value.trim();
                 if (!text) return;
-
-                const now = Date.now();
-
-                if (lastPostTime && (now - lastPostTime) < baseCooldown) {
-                    baseCooldown = baseCooldown * 2; 
-                    startCooldown(5000); 
-                    return;
-                }
-
-                if (text === lastPostedMessage) {
-                    duplicateCount++;
-                    if (duplicateCount >= 3) {
-                        showError("Please edit your message, this error is made to prevent SPAM BOTS");
-                        return;
-                    }
-                } else {
-                    duplicateCount = 0;
-                    clearError();
-                }
-
-                if (isContentBanned(text)) {
-                    showError("This message cannot be posted since it contains a banned word.");
-                    msgInput.value = '';
-                    return;
-                }
-
-                const newMsg = {
-                    id: userToken + '_' + now,
+                client.publish(CHAT_TOPIC, JSON.stringify({
+                    id: userToken + '_' + Date.now(),
                     text: text,
-                    sender: userToken,
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                };
-
-                // Directly write directly to the open data channel instantly across screens
-                client.publish(CHAT_TOPIC, JSON.stringify(newMsg));
-
-                lastPostedMessage = text;
-                lastPostTime = Date.now();
-                baseCooldown = 1000; 
-                
+                }));
                 msgInput.value = '';
-                msgInput.focus();
             }
         });
 
         function escapeHTML(str) {
-            return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+            return str.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t]));
         }
 
         renderMessages(globalMessages);
