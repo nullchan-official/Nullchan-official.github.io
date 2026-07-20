@@ -195,9 +195,20 @@
             return DISTINCT_COLORS[index];
         }
 
+        // --- UPDATED BANNED CONTENT LOGIC ---
         function containsBannedContent(inputText) {
+            // 1. BAN LINKS AS A WHOLE (Must check before removing punctuation)
+            // Catches http://, https://, www., and general domain.tld patterns
+            const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
+            if (linkPattern.test(inputText)) return true;
+
+            // 2. BAN PII (Emails & Phones)
+            const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+            const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
+            if (emailPattern.test(inputText) || phonePattern.test(inputText)) return true;
+
+            // 3. CLEAN TEXT FOR BYPASS EVASION
             let cleanText = inputText.toLowerCase();
-            
             const substitutions = {
                 '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', 
                 '@': 'a', '5': 's', '$': 's', '7': 't', 'x': 'x',
@@ -206,19 +217,17 @@
             cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
             cleanText = cleanText.replace(/[^a-z0-9]/g, '');
 
-            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga', 'com', 'gg', 'github', 'co', 'io', 'ma', 'uk', 'fr', 'gov', 'org', 'net', 'app', 'xyz', 'be', 'de', 'cn', 'edu', 'info', 'ca', 'tw', 'in', 'br', 'cloud'];
+            // 4. BAN ADDRESSES
+            const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
+            if (addressPattern.test(cleanText)) return true;
+
+            // 5. BAN SPECIFIC WORDS (TLDs removed)
+            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga'];
 
             for (const word of bannedWords) {
                 if (cleanText.includes(word)) return true;
             }
 
-            const emailPattern = /[a-z0-9._%+-]+@gmail\.com/i;
-            const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
-            const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
-
-            if (emailPattern.test(inputText) || phonePattern.test(inputText) || addressPattern.test(cleanText)) {
-                return true;
-            }
             return false;
         }
 
