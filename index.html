@@ -72,9 +72,7 @@
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; background: var(--text-muted); }
         
         .error-toast { color: var(--error); font-size: 0.85rem; min-height: 18px; text-align: center; font-weight: 600; word-break: break-all; }
-        .mobile-blocker { display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px; font-weight: 600; font-size: 1.2rem; }
 
-        /* Version Tag CSS */
         .version-tag {
             position: fixed;
             bottom: 10px;
@@ -116,15 +114,13 @@
         </div>
     </div>
 
-    <!-- Version Label -->
-    <div class="version-tag">V2026.07.17</div>
+    <div class="version-tag">V2026.09.27</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
         const errorToast = document.getElementById('errorToast');
         const loadingNotice = document.getElementById('loadingNotice');
 
-        // --- GLOBAL CRASH HANDLER ---
         window.addEventListener('error', function(event) {
             errorToast.innerText = `Crash caught: ${event.message || 'Unknown Execution Error'}`;
         });
@@ -138,13 +134,54 @@
         const themeBtn = document.getElementById('themeBtn');
         const presenceDot = document.getElementById('presenceDot');
 
-        // Token generation
-        const cryptoArray = new Uint32Array(1);
-        window.crypto.getRandomValues(cryptoArray);
-        let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
-        localStorage.setItem('user_token', userToken);
+        let userToken = localStorage.getItem('user_token');
+        if (!userToken) {
+            const cryptoArray = new Uint32Array(1);
+            window.crypto.getRandomValues(cryptoArray);
+            userToken = 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
+            localStorage.setItem('user_token', userToken);
+        }
 
-        // --- IP FETCHING FOR PERSISTENT COLORS ---
+        // --- BLACKLIST & BAN STATUS CHECK ---
+        let isUserBanned = false;
+
+        async function checkUserBanStatus() {
+            try {
+                const response = await fetch('https://github.com/nullchan-official/Nullchan-official.github.io/raw/refs/heads/main/blacklist.json');
+                if (!response.ok) throw new Error("Could not load blacklist");
+                const blacklistData = await response.json();
+                
+                processBanData(blacklistData);
+            } catch (err) {
+                console.warn("Using fallback blacklist check due to network/CORS error.");
+                // Fallback structured data matching your requested format
+                const fallbackData = {
+                    "usertokens": ["usr_1829nHS", "usr_2JDnS7"],
+                    "reasons": ["Spamming too much in chat", "Sending scam links"]
+                };
+                processBanData(fallbackData);
+            }
+        }
+
+        function processBanData(data) {
+            if (!data || !data.usertokens || !data.reasons) return;
+            
+            const index = data.usertokens.indexOf(userToken);
+            if (index !== -1) {
+                isUserBanned = true;
+                const banReason = data.reasons[index] || "Violation of community guidelines";
+                
+                msgInput.disabled = true;
+                sendBtn.disabled = true;
+                msgInput.value = "";
+                msgInput.placeholder = "Banned";
+                errorToast.innerText = `YOU HAVE BEEN BANNED FOR ${banReason}`;
+            }
+        }
+
+        // Run ban check immediately on load
+        checkUserBanStatus();
+
         let userIP = localStorage.getItem('cached_ip') || userToken;
         fetch('https://api64.ipify.org?format=json')
             .then(response => response.json())
@@ -170,14 +207,12 @@
         let isConnected = false;
         let receivedHistoryPayload = false;
         
-        let currentOnlineCount = 1;
         let showingUsernames = false;
 
-        // --- ANTI-SPAM & MODERATION STATE ---
         let userMessageTimestamps = [];
         let isRateLimited = false;
-        let isChatShutdown = false; // Prevents normal users from sending
-        let modShutdownActive = false; // Tracks if THIS user is the mod who shut it down
+        let isChatShutdown = false; 
+        let modShutdownActive = false; 
 
         const DISTINCT_COLORS = [
             '#ef4444', '#3b82f6', '#22c55e', '#eab308', 
@@ -195,19 +230,20 @@
             return DISTINCT_COLORS[index];
         }
 
-        // --- UPDATED BANNED CONTENT LOGIC ---
         function containsBannedContent(inputText) {
-            // 1. BAN LINKS AS A WHOLE (Must check before removing punctuation)
-            // Catches http://, https://, www., and general domain.tld patterns
             const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
             if (linkPattern.test(inputText)) return true;
 
-            // 2. BAN PII (Emails & Phones)
             const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
             const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
             if (emailPattern.test(inputText) || phonePattern.test(inputText)) return true;
 
-            // 3. CLEAN TEXT FOR BYPASS EVASION
+            const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}/;
+            if (ipPattern.test(inputText)) return true;
+
+            const btcPattern = /\b(bc1|[13])[a-km-zA-HJ-NP-Z1-9]{25,39}\b/;
+            if (btcPattern.test(inputText)) return true;
+
             let cleanText = inputText.toLowerCase();
             const substitutions = {
                 '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', 
@@ -217,11 +253,9 @@
             cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
             cleanText = cleanText.replace(/[^a-z0-9]/g, '');
 
-            // 4. BAN ADDRESSES
             const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
             if (addressPattern.test(cleanText)) return true;
 
-            // 5. BAN SPECIFIC WORDS (TLDs removed)
             const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga'];
 
             for (const word of bannedWords) {
@@ -258,12 +292,14 @@
             presenceDot.style.background = "#22c55e";
             presenceDot.style.boxShadow = "0 0 8px #22c55e";
             document.getElementById('onlineCount').innerText = "Live";
-            errorToast.innerText = "";
             
-            if (!isRateLimited && !isChatShutdown) {
-                msgInput.disabled = false;
-                sendBtn.disabled = false;
-                msgInput.placeholder = "Type a message...";
+            if (!isUserBanned) {
+                errorToast.innerText = "";
+                if (!isRateLimited && !isChatShutdown) {
+                    msgInput.disabled = false;
+                    sendBtn.disabled = false;
+                    msgInput.placeholder = "Type a message...";
+                }
             }
 
             setTimeout(() => {
@@ -276,8 +312,8 @@
             }, 4000);
         });
 
-        client.on('disconnect', () => { handleOfflineState("Disconnected from broker"); });
-        client.on('offline', () => { handleOfflineState("Connection dropped. Retrying..."); });
+        client.on('disconnect', () => { if (!isUserBanned) handleOfflineState("Disconnected from broker"); });
+        client.on('offline', () => { if (!isUserBanned) handleOfflineState("Connection dropped. Retrying..."); });
 
         function handleOfflineState(msg) {
             isConnected = false;
@@ -294,7 +330,6 @@
             let incomingData;
             try { incomingData = JSON.parse(payload.toString()); } 
             catch(e) {
-                console.warn(`Ignored malformed packet on ${topic}`);
                 if (topic === HISTORY_TOPIC) {
                     receivedHistoryPayload = true;
                     renderMessages([]);
@@ -332,19 +367,18 @@
                 }
 
                 if (topic === CHAT_TOPIC) {
-                    // --- MODERATOR COMMANDS ---
                     if (incomingData.action === 'SHUTDOWN') {
-                        if (incomingData.sender !== userToken) {
+                        if (incomingData.sender !== userToken && !isUserBanned) {
                             isChatShutdown = true;
                             msgInput.disabled = true;
                             sendBtn.disabled = true;
                             msgInput.placeholder = "Chat disabled by moderator...";
-                            errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
+                            errorToast.innerText = "A moderator has shutdown chat.";
                         }
                         return;
                     }
                     if (incomingData.action === 'ACTIVATE') {
-                        if (incomingData.sender !== userToken) {
+                        if (incomingData.sender !== userToken && !isUserBanned) {
                             isChatShutdown = false;
                             if (!isRateLimited && isConnected) {
                                 msgInput.disabled = false;
@@ -356,7 +390,6 @@
                         return;
                     }
 
-                    // --- NORMAL MESSAGES & PURGES ---
                     if (incomingData.action === 'CLEAR_PURGE') {
                         globalMessages = [];
                         renderMessages([]);
@@ -408,7 +441,7 @@
         }
 
         function handleSendMessage() {
-            if (!isConnected || isRateLimited || isChatShutdown) return;
+            if (isUserBanned || !isConnected || isRateLimited || isChatShutdown) return;
 
             const now = Date.now();
             const text = msgInput.value.trim();
@@ -433,8 +466,8 @@
             }
 
             if (containsBannedContent(text)) {
-                errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
-                setTimeout(() => { if(!isRateLimited && !isChatShutdown) errorToast.innerText = ""; }, 4000);
+                errorToast.innerText = "Message contains blocked phrases, IPs, wallets, or restricted info.";
+                setTimeout(() => { if(!isRateLimited && !isChatShutdown && !isUserBanned) errorToast.innerText = ""; }, 4000);
                 msgInput.value = '';
                 return;
             }
@@ -454,12 +487,13 @@
         }
 
         function triggerRateLimit() {
+            if (isUserBanned) return;
             isRateLimited = true;
             msgInput.disabled = true;
             sendBtn.disabled = true;
             
             let remainingTime = 5.0;
-            errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+            errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, Anti-Spam active`;
             msgInput.placeholder = "Locked due to spam protection...";
 
             const countdownInterval = setInterval(() => {
@@ -468,50 +502,51 @@
                     clearInterval(countdownInterval);
                     isRateLimited = false;
                     
-                    if (isConnected && !isChatShutdown) {
+                    if (isConnected && !isChatShutdown && !isUserBanned) {
                         errorToast.innerText = "";
                         msgInput.disabled = false;
                         sendBtn.disabled = false;
                         msgInput.placeholder = "Type a message...";
                         msgInput.focus();
-                    } else if (isChatShutdown) {
-                        errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
-                        msgInput.placeholder = "Chat disabled by moderator...";
                     }
                 } else {
-                    errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+                    errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, Anti-Spam active`;
                 }
             }, 100);
         }
 
-        // --- CONSOLE ADMIN COMMANDS ---
+        const ADMIN_TOKEN = 'usr_1nw63xp';
+
+        function verifyAdmin() {
+            if (userToken !== ADMIN_TOKEN) {
+                console.error("%cAccess Denied: You do not have permission to run moderation commands.", "color: red; font-size: 14px; font-weight: bold;");
+                return false;
+            }
+            return true;
+        }
 
         window.clearMessages = function() {
-            if(!isConnected) return;
+            if (!verifyAdmin() || !isConnected) return;
             const clearCmd = { action: 'CLEAR_PURGE', timestamp: Date.now() };
             client.publish(CHAT_TOPIC, JSON.stringify(clearCmd), { qos: 1 });
             client.publish(HISTORY_TOPIC, JSON.stringify(clearCmd), { retain: true, qos: 1 });
-            console.log("Feed cleared.");
+            console.log("%cFeed cleared successfully.", "color: green; font-weight: bold;");
         };
 
         window.shutdown = function() {
-            if(!isConnected) return;
+            if (!verifyAdmin() || !isConnected) return;
             modShutdownActive = true;
             const cmd = { action: 'SHUTDOWN', sender: userToken, timestamp: Date.now() };
             client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
-            console.log("Chat shut down. (You can still send messages)");
+            console.log("%cChat shut down for users.", "color: orange; font-weight: bold;");
         };
 
         window.activate = function() {
-            if(!isConnected) return;
-            if(!modShutdownActive) {
-                console.warn("Command failed: Chat is not currently shut down by you.");
-                return;
-            }
+            if (!verifyAdmin() || !isConnected) return;
             modShutdownActive = false;
             const cmd = { action: 'ACTIVATE', sender: userToken, timestamp: Date.now() };
             client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
-            console.log("Chat reactivated for everyone.");
+            console.log("%cChat reactivated for everyone.", "color: green; font-weight: bold;");
         };
 
         sendBtn.addEventListener('click', handleSendMessage);
