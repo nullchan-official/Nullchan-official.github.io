@@ -116,7 +116,7 @@
         </div>
     </div>
 
-    <div class="version-tag">V2026.09.27.4</div>
+    <div class="version-tag">V2026.09.27.5</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
@@ -234,7 +234,7 @@
         }
 
         function containsBannedContent(inputText) {
-            if (isAdmin) return false; 
+            if (isAdmin) return; 
 
             const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
             if (linkPattern.test(inputText)) return true;
@@ -459,17 +459,21 @@
                 div.style.borderLeft = `4px solid ${msg.type === 'announcement' ? '#a78bfa' : leftOutlineColor}`;
 
                 let nameTagHTML = '';
-                // OWNER ENHANCEMENT: Admin always sees user tokens/IDs above messages
                 if (isAdmin || showingUsernames || msg.type === 'announcement') {
                     let displayName;
+                    let tagColor = leftOutlineColor;
+
                     if (msg.type === 'announcement') {
                         displayName = '👑 OWNER ANNOUNCEMENT';
-                    } else if (isAdmin) {
-                        displayName = `[ID: ${escapeHTML(msg.sender || 'anon')}]`;
+                        tagColor = '#a78bfa';
+                    } else if (msg.sender === ADMIN_TOKEN) {
+                        displayName = `[ID: ${escapeHTML(msg.sender)}]`;
+                        tagColor = '#a78bfa'; // Explicit standout accent color for Owner Token tag
                     } else {
                         displayName = escapeHTML(msg.sender || 'anon');
                     }
-                    nameTagHTML = `<span class="sender-id" style="color: ${msg.type === 'announcement' ? '#a78bfa' : leftOutlineColor}">${displayName}</span>`;
+                    
+                    nameTagHTML = `<span class="sender-id" style="color: ${tagColor}">${displayName}</span>`;
                 }
 
                 div.innerHTML = `${nameTagHTML}<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
