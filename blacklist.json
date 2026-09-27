@@ -1,1 +1,10 @@
-
+{
+    "usertokens": [
+        "usr_PLACEHOLDERTOKEN",
+        "usr_ANOTHERPLACEHOLDERTOKEN"
+    ],
+    "reasons": [
+        "Placeholder so i don't forget how JSON works",
+        "Another placeholder"
+    ]
+}
