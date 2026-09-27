@@ -116,7 +116,7 @@
         </div>
     </div>
 
-    <div class="version-tag">V2026.09.27.3</div>
+    <div class="version-tag">V2026.09.27.4</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
@@ -149,9 +149,8 @@
         let isUserBanned = false;
 
         async function checkUserBanStatus(retriesLeft = 10) {
-            if (isAdmin) return; // Owner never gets restricted by blacklist
+            if (isAdmin) return; 
             try {
-                // Fixed CORS error by using jsDelivr CDN link instead of github raw URL directly
                 const response = await fetch('https://cdn.jsdelivr.net/gh/nullchan-official/Nullchan-official.github.io@main/blacklist.json');
                 if (!response.ok) throw new Error("Could not load blacklist");
                 const blacklistData = await response.json();
@@ -216,7 +215,7 @@
         let isRateLimited = false;
         let isChatShutdown = false; 
         let globalSlowmodeSeconds = 0;
-        let activeTimeouts = {}; // Tracks timeouts mapped by userToken -> expiry timestamp
+        let activeTimeouts = {}; 
 
         const DISTINCT_COLORS = [
             '#ef4444', '#3b82f6', '#22c55e', '#eab308', 
@@ -235,7 +234,7 @@
         }
 
         function containsBannedContent(inputText) {
-            if (isAdmin) return false; // Owner bypasses filters entirely
+            if (isAdmin) return false; 
 
             const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
             if (linkPattern.test(inputText)) return true;
@@ -326,7 +325,6 @@
         function checkClientInteractionState() {
             if (isUserBanned) return;
 
-            // Check if current user is timed out
             const timeoutExpiry = activeTimeouts[userToken];
             if (timeoutExpiry && Date.now() < timeoutExpiry) {
                 const remainingSec = Math.ceil((timeoutExpiry - Date.now()) / 1000);
@@ -461,8 +459,16 @@
                 div.style.borderLeft = `4px solid ${msg.type === 'announcement' ? '#a78bfa' : leftOutlineColor}`;
 
                 let nameTagHTML = '';
-                if (showingUsernames || msg.type === 'announcement') {
-                    const displayName = msg.type === 'announcement' ? '👑 OWNER ANNOUNCEMENT' : escapeHTML(msg.sender || 'anon');
+                // OWNER ENHANCEMENT: Admin always sees user tokens/IDs above messages
+                if (isAdmin || showingUsernames || msg.type === 'announcement') {
+                    let displayName;
+                    if (msg.type === 'announcement') {
+                        displayName = '👑 OWNER ANNOUNCEMENT';
+                    } else if (isAdmin) {
+                        displayName = `[ID: ${escapeHTML(msg.sender || 'anon')}]`;
+                    } else {
+                        displayName = escapeHTML(msg.sender || 'anon');
+                    }
                     nameTagHTML = `<span class="sender-id" style="color: ${msg.type === 'announcement' ? '#a78bfa' : leftOutlineColor}">${displayName}</span>`;
                 }
 
@@ -475,7 +481,6 @@
         function handleSendMessage() {
             if (isUserBanned || !isConnected || isChatShutdown) return;
 
-            // Check if owner is trying to send (bypass timeout check)
             if (!isAdmin) {
                 const timeoutExpiry = activeTimeouts[userToken];
                 if (timeoutExpiry && Date.now() < timeoutExpiry) {
@@ -488,7 +493,6 @@
             const text = msgInput.value.trim();
             if (!text) return;
 
-            // Enforce slowmode or spam protections only for regular users
             if (!isAdmin) {
                 if (globalSlowmodeSeconds > 0 && userMessageTimestamps.length > 0) {
                     const lastMsgTime = userMessageTimestamps[userMessageTimestamps.length - 1];
@@ -621,7 +625,6 @@
             console.log(`%cGlobal slowmode set to ${seconds} seconds.`, "color: #eab308; font-weight: bold;");
         };
 
-        // NEW: Persistent timeout command (e.g., timeout('usr_xxxx', 60))
         window.timeout = function(targetToken, durationSeconds) {
             if (!verifyAdmin() || !isConnected || !targetToken || !durationSeconds) return;
             const expiryTime = Date.now() + (durationSeconds * 1000);
@@ -632,7 +635,6 @@
                 sender: userToken, 
                 timestamp: Date.now() 
             };
-            // Retained so reloaded/new connecting clients will still respect active timeouts
             client.publish(SYSTEM_STATE_TOPIC, JSON.stringify(cmd), { retain: true, qos: 1 });
             console.log(`%cUser ${targetToken} timed out for ${durationSeconds} seconds.`, "color: orange; font-weight: bold;");
         };
