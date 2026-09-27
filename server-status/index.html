@@ -42,11 +42,30 @@
         
         .token-badge { font-family: monospace; background: rgba(167, 139, 250, 0.1); color: var(--accent); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(167, 139, 250, 0.2); }
         .bot-badge { background: rgba(234, 179, 8, 0.1); color: var(--warning); border-color: rgba(234, 179, 8, 0.2); }
+        
+        .owner-badge { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); font-weight: 700; }
+        .owner-type { color: #f59e0b; font-weight: 600; }
+
+        #authGuardScreen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 99999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+            font-size: 1.1rem;
+            color: var(--text-muted);
+        }
     </style>
 </head>
 <body>
 
-    <div class="status-container">
+    <div id="authGuardScreen">Checking access permissions...</div>
+
+    <div class="status-container" id="mainDashboard" style="display: none;">
         <div class="header">
             <div>
                 <h1>0chan SysOps Dashboard</h1>
@@ -91,6 +110,26 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
+        // --- SECURITY / ACCESS GUARD ---
+        const ADMIN_TOKEN = 'usr_1nw63xp';
+        const currentUserToken = localStorage.getItem('user_token');
+
+        if (currentUserToken !== ADMIN_TOKEN) {
+            document.getElementById('authGuardScreen').innerText = "You don't have access to this link, Redirecting...";
+            setTimeout(() => {
+                if (document.referrer && document.referrer !== window.location.href) {
+                    window.location.href = document.referrer;
+                } else {
+                    window.location.href = 'https://nullchan-official.github.io';
+                }
+            }, 1500);
+            throw new Error("Unauthorized access attempt halted.");
+        } else {
+            // Authorized — reveal dashboard
+            document.getElementById('authGuardScreen').style.display = 'none';
+            document.getElementById('mainDashboard').style.display = 'flex';
+        }
+
         const brokerStatus = document.getElementById('brokerStatus');
         const brokerCard = document.getElementById('brokerCard');
         const totalConnected = document.getElementById('totalConnected');
@@ -100,7 +139,6 @@
         const STATUS_TOPIC = 'io/0chan/public/presence_v1';
         let activeNodes = {};
 
-        // Unique monitor id so it doesn't count itself as a user chat node
         const monitorClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
             clientId: 'ops_monitor_' + Math.floor(Math.random() * 100000),
             connectTimeout: 5000
@@ -121,7 +159,6 @@
             try {
                 const data = JSON.parse(payload.toString());
                 if (data && data.user) {
-                    // Log or update node tracking timestamp
                     activeNodes[data.user] = {
                         lastSeen: Date.now(),
                         isBot: data.user.includes('bot')
@@ -135,13 +172,12 @@
 
         function updateDashboard() {
             const now = Date.now();
-            const disconnectCutoff = now - 10000; // Drop nodes silent for over 10s
+            const disconnectCutoff = now - 10000;
             
             let total = 0;
             let bots = 0;
             let htmlRows = '';
 
-            // Filter active nodes
             for (const token in activeNodes) {
                 if (activeNodes[token].lastSeen > disconnectCutoff) {
                     total++;
@@ -150,11 +186,22 @@
                     const latency = now - activeNodes[token].lastSeen;
                     const timeString = new Date(activeNodes[token].lastSeen).toLocaleTimeString();
                     const isBot = activeNodes[token].isBot;
+                    const isOwner = (token === ADMIN_TOKEN);
+
+                    let displayName = escapeHTML(token);
+                    let badgeClass = isBot ? 'bot-badge' : '';
+                    let typeString = isBot ? '🤖 Stress Agent' : '👤 Human Client';
+
+                    if (isOwner) {
+                        displayName = "FILENFOLDER";
+                        badgeClass = 'owner-badge';
+                        typeString = '👑 Owner';
+                    }
 
                     htmlRows += `
                         <tr>
-                            <td><span class="token-badge ${isBot ? 'bot-badge' : ''}">${escapeHTML(token)}</span></td>
-                            <td>${isBot ? '🤖 Stress Agent' : '👤 Human Client'}</td>
+                            <td><span class="token-badge ${badgeClass}">${displayName}</span></td>
+                            <td class="${isOwner ? 'owner-type' : ''}">${typeString}</td>
                             <td>${timeString}</td>
                             <td style="color: #22c55e;">+${latency}ms</td>
                         </tr>
@@ -172,7 +219,6 @@
             }
         }
 
-        // Keep registry freshly culled even when no messages arrive
         setInterval(updateDashboard, 2000);
 
         function escapeHTML(str) {
