@@ -1,439 +1,1054 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
     <title>0chan - Anonymous Feed</title>
+
     <style>
+
         :root {
+
             --bg: #ffffff;
+
             --surface: #f4f4f5;
+
             --border: #e4e4e7;
+
             --text: #18181b;
+
             --text-muted: #71717a;
+
             --accent: #a78bfa;
+
             --error: #ef4444;
-            --success: #22c55e;
+
         }
+
+
 
         [data-theme="dark"] {
+
             --bg: #0f0f12;
+
             --surface: #18181c;
+
             --border: #2d2d34;
+
             --text: #e2e8f0;
+
             --text-muted: #64748b;
+
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+
         
+
         body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; transition: background 0.2s, color 0.2s; position: relative; padding: 15px; }
+
         
-        .global-presence-tag { position: fixed; top: 20px; right: 20px; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; background: var(--surface); border: 1px solid var(--border); padding: 8px 14px; border-radius: 20px; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,0.05); cursor: pointer; }
-        .chat-container { width: 100%; max-width: 500px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 85vh; max-height: 800px; position: relative; z-index: 10; }
+
+        .global-presence-tag {
+
+            position: fixed;
+
+            top: 20px;
+
+            right: 20px;
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 8px;
+
+            font-size: 0.85rem;
+
+            font-weight: 600;
+
+            background: var(--surface);
+
+            border: 1px solid var(--border);
+
+            padding: 8px 14px;
+
+            border-radius: 20px;
+
+            z-index: 9999;
+
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+
+        }
+
+
+
+        .chat-container { width: 100%; max-width: 500px; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 85vh; max-height: 800px; color: #18181b; position: relative; z-index: 10; }
+
+        [data-theme="dark"] .chat-container { background: #18181c; border-color: #2d2d34; color: #e2e8f0; }
+
+
+
         .chat-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+
         .chat-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.5px; }
+
         
+
         .theme-toggle { background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+
         .theme-toggle:hover { background: var(--bg); }
 
+
+
         .message-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
+
+        
+
         .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); word-break: break-word; position: relative; }
+
         .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
+
         .msg .sender-id { font-size: 0.75rem; font-weight: 700; margin-bottom: 4px; display: block; opacity: 0.9; }
-        .announcement-msg { background: rgba(167, 139, 250, 0.1) !important; border-color: var(--accent) !important; }
+
+        
+
         .loading-notice { text-align: center; color: var(--text-muted); font-size: 0.95rem; margin: auto; font-style: italic; }
 
+
+
         .input-area { padding: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+
         .input-wrapper { display: flex; gap: 8px; width: 100%; }
+
         input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; color: var(--text); font-size: 0.95rem; outline: none; }
+
         input:focus { border-color: var(--accent); }
+
         input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--surface); }
 
+
+
         .send-btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0 18px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.15s; }
+
         .send-btn:hover { opacity: 0.9; }
+
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; background: var(--text-muted); }
+
         
+
         .error-toast { color: var(--error); font-size: 0.85rem; min-height: 18px; text-align: center; font-weight: 600; word-break: break-all; }
-        .version-tag { position: fixed; bottom: 10px; right: 15px; font-size: 0.75rem; font-weight: 600; color: var(--text); opacity: 0.2; pointer-events: none; z-index: 1; }
+
+        .mobile-blocker { display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px; font-weight: 600; font-size: 1.2rem; }
+
+
+
+        /* Version Tag CSS */
+
+        .version-tag {
+
+            position: fixed;
+
+            bottom: 10px;
+
+            right: 15px;
+
+            font-size: 0.75rem;
+
+            font-weight: 600;
+
+            color: var(--text);
+
+            opacity: 0.2;
+
+            pointer-events: none;
+
+            z-index: 1;
+
+        }
+
     </style>
+
 </head>
+
 <body>
 
-    <div class="global-presence-tag" onclick="window.location.href='./server-status'">
+
+
+    <div class="global-presence-tag" style="cursor: pointer;" onclick="window.location.href='./server-status'">
+
         <span id="presenceDot" style="width: 8px; height: 8px; background: #eab308; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #eab308;"></span>
+
         <span id="onlineCount">Connecting...</span>
+
     </div>
+
+
 
     <div class="chat-container" id="appContainer">
+
         <div class="chat-header">
+
             <div>
+
                 <h2>0chan</h2>
+
                 <button class="theme-toggle" id="themeBtn" style="margin-top: 8px;">Dark Mode</button>
+
             </div>
+
         </div>
+
         
+
         <div class="message-box" id="messageBox">
+
             <div class="loading-notice" id="loadingNotice">Loading channels and syncing history...</div>
+
         </div>
+
+
 
         <div class="input-area">
+
             <div class="error-toast" id="errorToast"></div>
+
             <div class="input-wrapper">
+
                 <input type="text" id="msgInput" placeholder="Connecting to feed..." maxlength="250" autocomplete="off" disabled>
+
                 <button class="send-btn" id="sendBtn" disabled>Send</button>
+
             </div>
+
         </div>
+
     </div>
 
-    <div class="version-tag">V2026.09.27.6-SECURE</div>
+
+
+    <!-- Version Label -->
+
+    <div class="version-tag">V2026.07.17</div>
+
+
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+
     <script>
+
         const errorToast = document.getElementById('errorToast');
+
         const loadingNotice = document.getElementById('loadingNotice');
-        const messageBox = document.getElementById('messageBox');
-        const msgInput = document.getElementById('msgInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const themeBtn = document.getElementById('themeBtn');
-        const presenceDot = document.getElementById('presenceDot');
 
-        // Authentication Management
-        let adminToken = sessionStorage.getItem('admin_session') || null;
-        let isAdmin = !!adminToken;
-        let isUserBanned = false;
 
-        let userToken = localStorage.getItem('user_token');
-        if (!userToken) {
-            const cryptoArray = new Uint32Array(1);
-            window.crypto.getRandomValues(cryptoArray);
-            userToken = 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
-            localStorage.setItem('user_token', userToken);
-        }
+
+        // --- GLOBAL CRASH HANDLER ---
 
         window.addEventListener('error', function(event) {
-            errorToast.style.color = 'var(--error)';
+
             errorToast.innerText = `Crash caught: ${event.message || 'Unknown Execution Error'}`;
+
         });
 
-        // Theme Toggle
-        themeBtn.addEventListener('click', () => {
-            const isDark = document.documentElement.hasAttribute('data-theme');
-            if (isDark) {
-                document.documentElement.removeAttribute('data-theme');
-                themeBtn.innerText = 'Dark Mode';
-                localStorage.setItem('theme_preference', 'light');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                themeBtn.innerText = 'Light Mode';
-                localStorage.setItem('theme_preference', 'dark');
-            }
-        });
-        if(localStorage.getItem('theme_preference') === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            themeBtn.innerText = 'Light Mode';
-        }
+        window.addEventListener('unhandledrejection', function(event) {
 
-        // IP Fetching & Ban Check
+            errorToast.innerText = `Network/Promise Crash: ${event.reason || 'Rejected Handshake'}`;
+
+        });
+
+
+
+        const messageBox = document.getElementById('messageBox');
+
+        const msgInput = document.getElementById('msgInput');
+
+        const sendBtn = document.getElementById('sendBtn');
+
+        const themeBtn = document.getElementById('themeBtn');
+
+        const presenceDot = document.getElementById('presenceDot');
+
+
+
+        // Token generation
+
+        const cryptoArray = new Uint32Array(1);
+
+        window.crypto.getRandomValues(cryptoArray);
+
+        let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
+
+        localStorage.setItem('user_token', userToken);
+
+
+
+        // --- IP FETCHING FOR PERSISTENT COLORS ---
+
         let userIP = localStorage.getItem('cached_ip') || userToken;
+
         fetch('https://api64.ipify.org?format=json')
-            .then(res => res.json())
-            .then(data => { userIP = data.ip; localStorage.setItem('cached_ip', userIP); })
-            .catch(() => console.warn("IP fetch failed."));
 
-        async function checkUserBanStatus() {
-            if (isAdmin) return; 
-            try {
-                const response = await fetch('https://cdn.jsdelivr.net/gh/nullchan-official/Nullchan-official.github.io@main/blacklist.json');
-                if (!response.ok) return;
-                const data = await response.json();
-                if (data.usertokens && data.usertokens.includes(userToken)) {
-                    const idx = data.usertokens.indexOf(userToken);
-                    applyPermanentBan(data.reasons[idx] || "Violation");
-                }
-            } catch (err) { console.warn("Blacklist unreachable."); }
-        }
+            .then(response => response.json())
 
-        function applyPermanentBan(reason) {
-            isUserBanned = true;
-            msgInput.disabled = true;
-            sendBtn.disabled = true;
-            msgInput.value = "";
-            msgInput.placeholder = "Banned";
-            errorToast.style.color = 'var(--error)';
-            errorToast.innerText = `BANNED: ${reason}`;
-        }
-        checkUserBanStatus();
+            .then(data => {
 
-        // MQTT Setup
+                userIP = data.ip;
+
+                localStorage.setItem('cached_ip', userIP);
+
+            })
+
+            .catch(err => console.warn("Could not fetch IP, falling back to token."));
+
+
+
         const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+
             clientId: userToken + '_' + Math.floor(Math.random() * 100000),
+
             connectTimeout: 8000,
+
             reconnectPeriod: 2000,
+
             keepalive: 60
+
         });
+
+
 
         const CHAT_TOPIC = 'io/0chan/public/global_feed_v1';
+
         const HISTORY_TOPIC = 'io/0chan/public/history_cache_v1';
+
         const STATUS_TOPIC = 'io/0chan/public/presence_v1';
-        const SYSTEM_STATE_TOPIC = 'io/0chan/public/system_state_v1';
+
+
 
         let globalMessages = [];
+
         let activePeers = {}; 
+
         let isConnected = false;
+
         let receivedHistoryPayload = false;
+
+        
+
+        let currentOnlineCount = 1;
+
         let showingUsernames = false;
 
-        let userMessageTimestamps = [];
-        let isRateLimited = false;
-        let isChatShutdown = false; 
-        let globalSlowmodeSeconds = 0;
-        let activeTimeouts = {}; 
 
-        const DISTINCT_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#6366f1'];
+
+        // --- ANTI-SPAM & MODERATION STATE ---
+
+        let userMessageTimestamps = [];
+
+        let isRateLimited = false;
+
+        let isChatShutdown = false; // Prevents normal users from sending
+
+        let modShutdownActive = false; // Tracks if THIS user is the mod who shut it down
+
+
+
+        const DISTINCT_COLORS = [
+
+            '#ef4444', '#3b82f6', '#22c55e', '#eab308', 
+
+            '#a855f7', '#ec4899', '#14b8a6', '#f97316', 
+
+            '#06b6d4', '#6366f1', '#84cc16', '#f43f5e', 
+
+            '#d946ef', '#f59e0b', '#10b981', '#0ea5e9'
+
+        ];
+
+
 
         function getColorFromIdentifier(str) {
+
             let hash = 0;
-            for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            return DISTINCT_COLORS[Math.abs(hash) % DISTINCT_COLORS.length];
+
+            for (let i = 0; i < str.length; i++) {
+
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+
+            }
+
+            const index = Math.abs(hash) % DISTINCT_COLORS.length;
+
+            return DISTINCT_COLORS[index];
+
         }
+
+
+
+        // --- UPDATED BANNED CONTENT LOGIC ---
 
         function containsBannedContent(inputText) {
-            if (isAdmin) return false; 
-            const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b/i;
+
+            // 1. BAN LINKS AS A WHOLE (Must check before removing punctuation)
+
+            // Catches http://, https://, www., and general domain.tld patterns
+
+            const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
+
             if (linkPattern.test(inputText)) return true;
-            const bannedWords = ['discord', 'tiktok', 'snapchat', 'facebook', 'nigga', 'nigger', 'goon', 'whore'];
-            let cleanText = inputText.toLowerCase().replace(/[^a-z0-9]/g, '');
-            return bannedWords.some(word => cleanText.includes(word));
+
+
+
+            // 2. BAN PII (Emails & Phones)
+
+            const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+
+            const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
+
+            if (emailPattern.test(inputText) || phonePattern.test(inputText)) return true;
+
+
+
+            // 3. CLEAN TEXT FOR BYPASS EVASION
+
+            let cleanText = inputText.toLowerCase();
+
+            const substitutions = {
+
+                '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', 
+
+                '@': 'a', '5': 's', '$': 's', '7': 't', 'x': 'x',
+
+                '(': 'c', '[': 'c'
+
+            };
+
+            cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
+
+            cleanText = cleanText.replace(/[^a-z0-9]/g, '');
+
+
+
+            // 4. BAN ADDRESSES
+
+            const addressPattern = /\d+[a-z0-9]{3,}(st|avenue|ave|rd|road|blvd|lane|ln|drive|dr|way|court|ct)/i;
+
+            if (addressPattern.test(cleanText)) return true;
+
+
+
+            // 5. BAN SPECIFIC WORDS (TLDs removed)
+
+            const bannedWords = ['goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap', 'facebook', 'nigga', 'nigger', 'niger', 'niga'];
+
+
+
+            for (const word of bannedWords) {
+
+                if (cleanText.includes(word)) return true;
+
+            }
+
+
+
+            return false;
+
         }
 
-        function checkClientInteractionState() {
-            if (isUserBanned) return;
-            const timeoutExpiry = activeTimeouts[userToken];
-            
-            if (timeoutExpiry && Date.now() < timeoutExpiry) {
-                const remainingSec = Math.ceil((timeoutExpiry - Date.now()) / 1000);
-                msgInput.disabled = true; sendBtn.disabled = true;
-                msgInput.placeholder = "Timed out...";
-                errorToast.innerText = `Timed out for ${remainingSec}s.`;
-                return;
+
+
+        themeBtn.addEventListener('click', () => {
+
+            const isDark = document.documentElement.hasAttribute('data-theme');
+
+            if (isDark) {
+
+                document.documentElement.removeAttribute('data-theme');
+
+                themeBtn.innerText = 'Dark Mode';
+
+                localStorage.setItem('theme_preference', 'light');
+
+            } else {
+
+                document.documentElement.setAttribute('data-theme', 'dark');
+
+                themeBtn.innerText = 'Light Mode';
+
+                localStorage.setItem('theme_preference', 'dark');
+
             }
-            if (isChatShutdown && !isAdmin) {
-                msgInput.disabled = true; sendBtn.disabled = true;
-                msgInput.placeholder = "Chat disabled...";
-                errorToast.innerText = "Moderator shutdown.";
-                return;
-            }
-            if (!isRateLimited) {
-                errorToast.innerText = "";
-                msgInput.disabled = false; sendBtn.disabled = false;
-                msgInput.placeholder = "Type a message... (/auth <token> for admin)";
-            }
+
+        });
+
+
+
+        if(localStorage.getItem('theme_preference') === 'dark') {
+
+            document.documentElement.setAttribute('data-theme', 'dark');
+
+            themeBtn.innerText = 'Light Mode';
+
         }
+
+
 
         client.on('connect', () => {
-            isConnected = true;
-            client.subscribe([CHAT_TOPIC, HISTORY_TOPIC, STATUS_TOPIC, SYSTEM_STATE_TOPIC]);
-            presenceDot.style.background = "#22c55e";
-            presenceDot.style.boxShadow = "0 0 8px #22c55e";
-            document.getElementById('onlineCount').innerText = "Live";
-            checkClientInteractionState();
 
-            setTimeout(() => { if (!receivedHistoryPayload) renderMessages(globalMessages); }, 1500);
+            isConnected = true;
+
+            client.subscribe([CHAT_TOPIC, HISTORY_TOPIC, STATUS_TOPIC], (err) => {
+
+                if(err) console.error("Topic subscription error");
+
+            });
+
+
+
+            presenceDot.style.background = "#22c55e";
+
+            presenceDot.style.boxShadow = "0 0 8px #22c55e";
+
+            document.getElementById('onlineCount').innerText = "Live";
+
+            errorToast.innerText = "";
+
             
+
+            if (!isRateLimited && !isChatShutdown) {
+
+                msgInput.disabled = false;
+
+                sendBtn.disabled = false;
+
+                msgInput.placeholder = "Type a message...";
+
+            }
+
+
+
+            setTimeout(() => {
+
+                if (!receivedHistoryPayload) renderMessages(globalMessages);
+
+            }, 1500);
+
+
+
+            client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
+
             setInterval(() => {
+
                 if(isConnected) client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
+
             }, 4000);
+
         });
 
-        client.on('disconnect', () => { isConnected = false; });
+
+
+        client.on('disconnect', () => { handleOfflineState("Disconnected from broker"); });
+
+        client.on('offline', () => { handleOfflineState("Connection dropped. Retrying..."); });
+
+
+
+        function handleOfflineState(msg) {
+
+            isConnected = false;
+
+            msgInput.disabled = true;
+
+            sendBtn.disabled = true;
+
+            msgInput.placeholder = "Connecting...";
+
+            presenceDot.style.background = "#eab308";
+
+            presenceDot.style.boxShadow = "0 0 8px #eab308";
+
+            document.getElementById('onlineCount').innerText = "Connecting...";
+
+            errorToast.innerText = msg;
+
+        }
+
+
 
         client.on('message', (topic, payload) => {
+
             let incomingData;
+
             try { incomingData = JSON.parse(payload.toString()); } 
-            catch(e) { return; }
+
+            catch(e) {
+
+                console.warn(`Ignored malformed packet on ${topic}`);
+
+                if (topic === HISTORY_TOPIC) {
+
+                    receivedHistoryPayload = true;
+
+                    renderMessages([]);
+
+                }
+
+                return; 
+
+            }
+
             
-            if (topic === SYSTEM_STATE_TOPIC) {
-                // Command Verification: Only execute if sender is a valid admin token session
-                if (incomingData.sender && incomingData.sender === adminToken) {
-                    if (incomingData.action === 'SHUTDOWN') isChatShutdown = true;
-                    if (incomingData.action === 'ACTIVATE') isChatShutdown = false;
-                    if (incomingData.action === 'SLOWMODE') globalSlowmodeSeconds = incomingData.seconds || 0;
-                    if (incomingData.action === 'TIMEOUT' && incomingData.targetUser) {
-                        activeTimeouts[incomingData.targetUser] = incomingData.expiry;
-                    }
-                    checkClientInteractionState();
-                }
-                return;
-            }
 
-            if (topic === HISTORY_TOPIC) {
-                receivedHistoryPayload = true;
-                // Validation: Prevent malicious users from passing empty arrays/objects to wipe history
-                if (Array.isArray(incomingData) && incomingData.length > 0) {
-                    const validMessages = incomingData.filter(m => m.id && m.text);
-                    if (validMessages.length > 0 && globalMessages.length === 0) {
-                        globalMessages = validMessages;
+            try {
+
+                if (topic === STATUS_TOPIC) {
+
+                    activePeers[incomingData.user] = Date.now();
+
+                    const cutoff = Date.now() - 10000;
+
+                    let count = 0;
+
+                    for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
+
+                    
+
+                    document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
+
+                    
+
+                    let shouldShowUsernames = count > 16;
+
+                    if (showingUsernames !== shouldShowUsernames) {
+
+                        showingUsernames = shouldShowUsernames;
+
                         renderMessages(globalMessages);
+
                     }
-                } else if (incomingData.action === 'CLEAR_PURGE' && incomingData.sender === adminToken) {
-                    globalMessages = []; renderMessages([]);
+
+                    return;
+
                 }
-                return;
+
+
+
+                if (topic === HISTORY_TOPIC) {
+
+                    receivedHistoryPayload = true;
+
+                    if (Array.isArray(incomingData) && globalMessages.length === 0) {
+
+                        globalMessages = incomingData.filter(m => m.text && !containsBannedContent(m.text));
+
+                        renderMessages(globalMessages);
+
+                    } else if (incomingData && incomingData.action === 'CLEAR_PURGE') {
+
+                        globalMessages = [];
+
+                        renderMessages([]);
+
+                    }
+
+                    return;
+
+                }
+
+
+
+                if (topic === CHAT_TOPIC) {
+
+                    // --- MODERATOR COMMANDS ---
+
+                    if (incomingData.action === 'SHUTDOWN') {
+
+                        if (incomingData.sender !== userToken) {
+
+                            isChatShutdown = true;
+
+                            msgInput.disabled = true;
+
+                            sendBtn.disabled = true;
+
+                            msgInput.placeholder = "Chat disabled by moderator...";
+
+                            errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
+
+                        }
+
+                        return;
+
+                    }
+
+                    if (incomingData.action === 'ACTIVATE') {
+
+                        if (incomingData.sender !== userToken) {
+
+                            isChatShutdown = false;
+
+                            if (!isRateLimited && isConnected) {
+
+                                msgInput.disabled = false;
+
+                                sendBtn.disabled = false;
+
+                                msgInput.placeholder = "Type a message...";
+
+                                errorToast.innerText = "";
+
+                            }
+
+                        }
+
+                        return;
+
+                    }
+
+
+
+                    // --- NORMAL MESSAGES & PURGES ---
+
+                    if (incomingData.action === 'CLEAR_PURGE') {
+
+                        globalMessages = [];
+
+                        renderMessages([]);
+
+                        return;
+
+                    }
+
+
+
+                    if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
+
+                        if (containsBannedContent(incomingData.text)) return; 
+
+                        
+
+                        globalMessages.push(incomingData);
+
+                        if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
+
+                        renderMessages(globalMessages);
+
+                        
+
+                        if (incomingData.sender === userToken) {
+
+                            client.publish(HISTORY_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
+
+                        }
+
+                    }
+
+                }
+
+            } catch(e) {
+
+                console.error("Internal process error", e);
+
             }
 
-            if (topic === STATUS_TOPIC) {
-                activePeers[incomingData.user] = Date.now();
-                const cutoff = Date.now() - 10000;
-                let count = 0;
-                for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
-                document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
-                
-                let shouldShowUsernames = count > 16;
-                if (showingUsernames !== shouldShowUsernames) {
-                    showingUsernames = shouldShowUsernames;
-                    renderMessages(globalMessages);
-                }
-                return;
-            }
-
-            if (topic === CHAT_TOPIC) {
-                if (incomingData.action === 'CLEAR_PURGE' && incomingData.sender === adminToken) {
-                    globalMessages = []; renderMessages([]); return;
-                }
-                if (incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
-                    if (incomingData.type !== 'announcement' && containsBannedContent(incomingData.text)) return; 
-                    
-                    globalMessages.push(incomingData);
-                    if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
-                    renderMessages(globalMessages);
-                    
-                    // Only the admin client maintains the history retention now
-                    if (isAdmin && incomingData.sender === userToken) {
-                        client.publish(HISTORY_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
-                    }
-                }
-            }
         });
 
+
+
         function renderMessages(msgs) {
+
             if (msgs.length === 0) {
+
                 messageBox.innerHTML = '<div class="loading-notice">No messages found in this feed yet.</div>';
+
                 return;
+
             }
+
             messageBox.innerHTML = '';
+
             msgs.forEach(msg => {
+
+                if (!msg.text) return; 
+
                 const div = document.createElement('div');
-                div.className = msg.type === 'announcement' ? 'msg announcement-msg' : 'msg';
-                const leftColor = getColorFromIdentifier(msg.userIpIdentifier || msg.sender || 'anon');
-                div.style.borderLeft = `4px solid ${msg.type === 'announcement' ? '#a78bfa' : leftColor}`;
+
+                div.className = 'msg';
+
+                
+
+                const identifierToHash = msg.userIpIdentifier || msg.sender || 'anon';
+
+                const leftOutlineColor = getColorFromIdentifier(identifierToHash);
+
+                
+
+                div.style.borderLeft = `4px solid ${leftOutlineColor}`;
+
+
 
                 let nameTagHTML = '';
-                if (isAdmin || showingUsernames || msg.type === 'announcement') {
-                    let displayName = msg.type === 'announcement' ? '👑 OWNER' : escapeHTML(msg.sender || 'anon');
-                    let tagColor = msg.type === 'announcement' || msg.sender === adminToken ? '#a78bfa' : leftColor;
-                    nameTagHTML = `<span class="sender-id" style="color: ${tagColor}">${displayName}</span>`;
+
+                if (showingUsernames) {
+
+                    nameTagHTML = `<span class="sender-id" style="color: ${leftOutlineColor}">${escapeHTML(msg.sender || 'anon')}</span>`;
+
                 }
+
+
+
                 div.innerHTML = `${nameTagHTML}<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
+
                 messageBox.appendChild(div);
+
             });
+
             messageBox.scrollTop = messageBox.scrollHeight;
+
         }
+
+
 
         function handleSendMessage() {
-            if (isUserBanned || !isConnected || isChatShutdown) return;
+
+            if (!isConnected || isRateLimited || isChatShutdown) return;
+
+
+
+            const now = Date.now();
 
             const text = msgInput.value.trim();
+
             if (!text) return;
 
-            // Auth Command Intercept
-            if (text.startsWith('/auth ')) {
-                adminToken = text.split(' ')[1];
-                sessionStorage.setItem('admin_session', adminToken);
-                isAdmin = true;
-                msgInput.value = '';
-                errorToast.style.color = 'var(--success)';
-                errorToast.innerText = "Admin session active.";
-                setTimeout(() => errorToast.innerText = "", 3000);
-                return;
+
+
+            userMessageTimestamps.push(now);
+
+            if (userMessageTimestamps.length > 5) userMessageTimestamps.shift();
+
+
+
+            if (userMessageTimestamps.length === 5) {
+
+                let triggersSpamFlag = true;
+
+                for (let i = 1; i < userMessageTimestamps.length; i++) {
+
+                    if (userMessageTimestamps[i] - userMessageTimestamps[i - 1] >= 2000) {
+
+                        triggersSpamFlag = false;
+
+                        break;
+
+                    }
+
+                }
+
+                if (triggersSpamFlag) {
+
+                    triggerRateLimit();
+
+                    msgInput.value = '';
+
+                    return;
+
+                }
+
             }
 
-            if (!isAdmin) {
-                if (isRateLimited) return;
-                const now = Date.now();
-                userMessageTimestamps.push(now);
-                if (userMessageTimestamps.length > 5) userMessageTimestamps.shift();
-                if (userMessageTimestamps.length === 5 && (now - userMessageTimestamps[0] < 5000)) {
-                    triggerRateLimit(); msgInput.value = ''; return;
-                }
-                if (containsBannedContent(text)) {
-                    errorToast.style.color = 'var(--error)';
-                    errorToast.innerText = "Message rejected by local filter.";
-                    setTimeout(() => errorToast.innerText = "", 3000);
-                    msgInput.value = ''; return;
-                }
+
+
+            if (containsBannedContent(text)) {
+
+                errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
+
+                setTimeout(() => { if(!isRateLimited && !isChatShutdown) errorToast.innerText = ""; }, 4000);
+
+                msgInput.value = '';
+
+                return;
+
             }
+
+
 
             const newMsg = {
-                id: userToken + '_' + Date.now(),
-                timestamp: Date.now(),
+
+                id: userToken + '_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+
+                timestamp: now,
+
                 sender: userToken,
+
                 userIpIdentifier: userIP,
+
                 text: text,
+
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
             };
+
+
 
             client.publish(CHAT_TOPIC, JSON.stringify(newMsg), { qos: 1 });
+
             msgInput.value = '';
+
+            msgInput.focus();
+
         }
+
+
 
         function triggerRateLimit() {
-            if (isAdmin) return;
-            isRateLimited = true; msgInput.disabled = true; sendBtn.disabled = true;
-            let remaining = 5.0;
-            const timer = setInterval(() => {
-                remaining -= 0.1;
-                if (remaining <= 0) {
-                    clearInterval(timer); isRateLimited = false; checkClientInteractionState();
+
+            isRateLimited = true;
+
+            msgInput.disabled = true;
+
+            sendBtn.disabled = true;
+
+            
+
+            let remainingTime = 5.0;
+
+            errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+
+            msgInput.placeholder = "Locked due to spam protection...";
+
+
+
+            const countdownInterval = setInterval(() => {
+
+                remainingTime -= 0.1;
+
+                if (remainingTime <= 0) {
+
+                    clearInterval(countdownInterval);
+
+                    isRateLimited = false;
+
+                    
+
+                    if (isConnected && !isChatShutdown) {
+
+                        errorToast.innerText = "";
+
+                        msgInput.disabled = false;
+
+                        sendBtn.disabled = false;
+
+                        msgInput.placeholder = "Type a message...";
+
+                        msgInput.focus();
+
+                    } else if (isChatShutdown) {
+
+                        errorToast.innerText = "A modderator has shutdown TEXT (usually for announcments)";
+
+                        msgInput.placeholder = "Chat disabled by moderator...";
+
+                    }
+
                 } else {
-                    errorToast.innerText = `Anti-Spam: ${remaining.toFixed(1)}s`;
+
+                    errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+
                 }
+
             }, 100);
+
         }
 
-        // Admin Commands (Only execute if authenticated)
+
+
+        // --- CONSOLE ADMIN COMMANDS ---
+
+
+
         window.clearMessages = function() {
-            if (!isAdmin) return;
-            const cmd = { action: 'CLEAR_PURGE', sender: adminToken, timestamp: Date.now() };
-            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
-            client.publish(HISTORY_TOPIC, JSON.stringify(cmd), { retain: true, qos: 1 });
+
+            if(!isConnected) return;
+
+            const clearCmd = { action: 'CLEAR_PURGE', timestamp: Date.now() };
+
+            client.publish(CHAT_TOPIC, JSON.stringify(clearCmd), { qos: 1 });
+
+            client.publish(HISTORY_TOPIC, JSON.stringify(clearCmd), { retain: true, qos: 1 });
+
+            console.log("Feed cleared.");
+
         };
+
+
 
         window.shutdown = function() {
-            if (!isAdmin) return;
-            client.publish(SYSTEM_STATE_TOPIC, JSON.stringify({ action: 'SHUTDOWN', sender: adminToken }), { retain: true });
-        };
-        
-        window.activate = function() {
-            if (!isAdmin) return;
-            client.publish(SYSTEM_STATE_TOPIC, JSON.stringify({ action: 'ACTIVATE', sender: adminToken }), { retain: true });
+
+            if(!isConnected) return;
+
+            modShutdownActive = true;
+
+            const cmd = { action: 'SHUTDOWN', sender: userToken, timestamp: Date.now() };
+
+            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
+
+            console.log("Chat shut down. (You can still send messages)");
+
         };
 
-        window.broadcast = function(messageText) {
-            if (!isAdmin || !messageText) return;
-            const broadcastMsg = {
-                id: 'ann_' + Date.now(), timestamp: Date.now(), sender: 'FILENFOLDER',
-                type: 'announcement', text: messageText,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            };
-            client.publish(CHAT_TOPIC, JSON.stringify(broadcastMsg), { qos: 1 });
+
+
+        window.activate = function() {
+
+            if(!isConnected) return;
+
+            if(!modShutdownActive) {
+
+                console.warn("Command failed: Chat is not currently shut down by you.");
+
+                return;
+
+            }
+
+            modShutdownActive = false;
+
+            const cmd = { action: 'ACTIVATE', sender: userToken, timestamp: Date.now() };
+
+            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
+
+            console.log("Chat reactivated for everyone.");
+
         };
+
+
 
         sendBtn.addEventListener('click', handleSendMessage);
-        msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
+
+        msgInput.addEventListener('keypress', (e) => {
+
+            if (e.key === 'Enter') handleSendMessage();
+
+        });
+
+
 
         function escapeHTML(str) {
+
             return str.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t]));
+
         }
+
     </script>
+
 </body>
+
 </html>
+
