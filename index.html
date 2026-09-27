@@ -12,262 +12,577 @@
             --text: #18181b;
             --text-muted: #71717a;
             --accent: #a78bfa;
-            --vip-gold: #D4AF37;
+            --error: #ef4444;
         }
 
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: var(--bg);
+        [data-theme="dark"] {
+            --bg: #0f0f12;
+            --surface: #18181c;
+            --border: #2d2d34;
+            --text: #e2e8f0;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+
+        body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; transition: background 0.2s, color 0.2s; position: relative; padding: 15px; }
+
+        .global-presence-tag {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 20px;
+            z-index: 9999;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .pinned-banner {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #eab308;
+            color: #18181b;
+            font-weight: 700;
+            text-align: center;
+            padding: 10px 16px;
+            z-index: 10000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .chat-container { width: 100%; max-width: 500px; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 85vh; max-height: 800px; color: #18181b; position: relative; z-index: 10; }
+        [data-theme="dark"] .chat-container { background: #18181c; border-color: #2d2d34; color: #e2e8f0; }
+
+        .chat-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .chat-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.5px; }
+
+        .theme-toggle { background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+        .theme-toggle:hover { background: var(--bg); }
+
+        .message-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
+
+        .msg { background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); word-break: break-word; position: relative; }
+        .msg .meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right; }
+        .msg .sender-id { font-size: 0.75rem; font-weight: 700; margin-bottom: 4px; display: block; opacity: 0.9; }
+
+        .loading-notice { text-align: center; color: var(--text-muted); font-size: 0.95rem; margin: auto; font-style: italic; }
+
+        .input-area { padding: 20px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+        .input-wrapper { display: flex; gap: 8px; width: 100%; }
+        input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; color: var(--text); font-size: 0.95rem; outline: none; }
+        input:focus { border-color: var(--accent); }
+        input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--surface); }
+
+        .send-btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0 18px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.15s; }
+        .send-btn:hover { opacity: 0.9; }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; background: var(--text-muted); }
+
+        .error-toast { color: var(--error); font-size: 0.85rem; min-height: 18px; text-align: center; font-weight: 600; word-break: break-all; }
+
+        .version-tag {
+            position: fixed;
+            bottom: 10px;
+            right: 15px;
+            font-size: 0.75rem;
+            font-weight: 600;
             color: var(--text);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            height: 100vh;
-            box-sizing: border-box;
+            opacity: 0.2;
+            pointer-events: none;
+            z-index: 1;
         }
-
-        /* Test Controls - Just so you can see both perspectives */
-        .test-panel {
-            background: var(--surface);
-            padding: 10px 20px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin-bottom: 20px;
-            width: 100%;
-            max-width: 600px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .chat-container {
-            width: 100%;
-            max-width: 600px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            height: 70vh;
-        }
-
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .message {
-            background: var(--bg);
-            border: 1px solid var(--border);
-            padding: 10px;
-            border-radius: 6px;
-        }
-
-        .msg-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-            font-size: 0.85em;
-        }
-
-        .author {
-            font-weight: bold;
-            color: var(--accent);
-        }
-
-        .vip-author {
-            color: var(--vip-gold);
-            font-weight: 800;
-        }
-
-        .time {
-            color: var(--text-muted);
-        }
-
-        .input-area {
-            display: flex;
-            padding: 15px;
-            border-top: 1px solid var(--border);
-            gap: 10px;
-        }
-
-        input[type="text"] {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            outline: none;
-        }
-
-        button {
-            padding: 10px 20px;
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        
-        button:hover { background: #9061f9; }
     </style>
 </head>
 <body>
 
-    <!-- Perspective Switcher (For testing) -->
-    <div class="test-panel">
-        <div>
-            <strong>Viewing as: </strong>
-            <select id="userSwitcher" onchange="switchUser()">
-                <option value="usr_1nw63xp">usr_1nw63xp (You)</option>
-                <option value="usr_999999">usr_999999 (Random Person)</option>
-            </select>
-        </div>
-        <div style="font-size: 0.8em; color: var(--text-muted);">
-            Type "badword" to test filter | Spam fast to test antispam
-        </div>
+    <div class="pinned-banner" id="pinnedBanner"></div>
+
+    <div class="global-presence-tag" style="cursor: pointer;" onclick="window.location.href='./server-status'">
+        <span id="presenceDot" style="width: 8px; height: 8px; background: #eab308; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #eab308;"></span>
+        <span id="onlineCount">Connecting...</span>
     </div>
 
-    <!-- Chat App -->
-    <div class="chat-container">
-        <div class="messages" id="chatBox"></div>
+    <div class="chat-container" id="appContainer">
+        <div class="chat-header">
+            <div>
+                <h2>0chan</h2>
+                <button class="theme-toggle" id="themeBtn" style="margin-top: 8px;">Dark Mode</button>
+            </div>
+        </div>
+
+        <div class="message-box" id="messageBox">
+            <div class="loading-notice" id="loadingNotice">Loading channels and syncing history...</div>
+        </div>
+
         <div class="input-area">
-            <input type="text" id="chatInput" placeholder="Type a message or yourtoken()..." onkeypress="handleEnter(event)">
-            <button onclick="handleSend()">Send</button>
+            <div class="error-toast" id="errorToast"></div>
+            <div class="input-wrapper">
+                <input type="text" id="msgInput" placeholder="Connecting to feed..." maxlength="250" autocomplete="off" disabled>
+                <button class="send-btn" id="sendBtn" disabled>Send</button>
+            </div>
         </div>
     </div>
 
-    <script>
-        const TARGET_ID = 'usr_1nw63xp';
-        let currentUserId = TARGET_ID;
-        let lastMessageTime = 0;
-        let globalMessages = []; // Store messages to re-render when switching perspective
+    <div class="version-tag">V2026.09.27</div>
 
-        // ==========================================
-        // 1. FILTER & ANTI-SPAM LOGIC
-        // ==========================================
-        function isSpamming(userId) {
-            // BYPASS FOR YOU
-            if (userId === TARGET_ID) return false; 
-            
-            const now = Date.now();
-            if (now - lastMessageTime < 2500) { // 2.5 second cooldown for normal users
-                return true; 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script>
+        const errorToast = document.getElementById('errorToast');
+        const loadingNotice = document.getElementById('loadingNotice');
+        const pinnedBanner = document.getElementById('pinnedBanner');
+
+        window.addEventListener('error', function(event) {
+            errorToast.innerText = `Crash caught: ${event.message || 'Unknown Execution Error'}`;
+        });
+        window.addEventListener('unhandledrejection', function(event) {
+            errorToast.innerText = `Network/Promise Crash: ${event.reason || 'Rejected Handshake'}`;
+        });
+
+        const messageBox = document.getElementById('messageBox');
+        const msgInput = document.getElementById('msgInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const themeBtn = document.getElementById('themeBtn');
+        const presenceDot = document.getElementById('presenceDot');
+
+        // --- MODERATION CONFIG ---
+        const MOD_TOKEN = 'usr_1nw63xp';
+        const BLACKLIST_URL = 'https://cdn.jsdelivr.net/gh/nullchan-official/Nullchan-official.github.io@main/blacklist.json';
+
+        const cryptoArray = new Uint32Array(1);
+        window.crypto.getRandomValues(cryptoArray);
+        let userToken = localStorage.getItem('user_token') || 'usr_' + cryptoArray[0].toString(36).substring(0, 8);
+        localStorage.setItem('user_token', userToken);
+
+        const isModUser = (userToken === MOD_TOKEN);
+
+        let userIP = localStorage.getItem('cached_ip') || userToken;
+        fetch('https://api64.ipify.org?format=json')
+            .then(response => response.json())
+            .then(data => {
+                userIP = data.ip;
+                localStorage.setItem('cached_ip', userIP);
+            })
+            .catch(err => console.warn("Could not fetch IP, falling back to token."));
+
+        const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+            clientId: userToken + '_' + Math.floor(Math.random() * 100000),
+            connectTimeout: 8000,
+            reconnectPeriod: 2000,
+            keepalive: 60
+        });
+
+        const CHAT_TOPIC = 'io/0chan/public/global_feed_v1';
+        const HISTORY_TOPIC = 'io/0chan/public/history_cache_v1';
+        const STATUS_TOPIC = 'io/0chan/public/presence_v1';
+        const SHUTDOWN_STATE_TOPIC = 'io/0chan/public/shutdown_state_v1';
+
+        let globalMessages = [];
+        let activePeers = {};
+        let isConnected = false;
+        let receivedHistoryPayload = false;
+
+        let showingUsernames = false;
+
+        let userMessageTimestamps = [];
+        let isRateLimited = false;
+        let isChatShutdown = false;
+        let isBanned = false;
+        let banReason = '';
+
+        const DISTINCT_COLORS = [
+            '#ef4444', '#3b82f6', '#22c55e', '#eab308',
+            '#a855f7', '#ec4899', '#14b8a6', '#f97316',
+            '#06b6d4', '#6366f1', '#84cc16', '#f43f5e',
+            '#d946ef', '#f59e0b', '#10b981', '#0ea5e9'
+        ];
+
+        function getColorFromIdentifier(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
-            lastMessageTime = now;
+            const index = Math.abs(hash) % DISTINCT_COLORS.length;
+            return DISTINCT_COLORS[index];
+        }
+
+        // --- BANNED CONTENT LOGIC ---
+        function containsBannedContent(inputText) {
+            const linkPattern = /\b(?:https?:\/\/|www\.)[^\s]+\b|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,7}(?:\/[^\s]*)?\b/i;
+            if (linkPattern.test(inputText)) return true;
+
+            const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+            const phonePattern = /(\+?\d{1,4}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}\s?-?\.?\d{4}/;
+            if (emailPattern.test(inputText) || phonePattern.test(inputText)) return true;
+
+            // IP addresses (IPv4 + IPv6)
+            const ipv4Pattern = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d{1,2})\.){3}(?:25[0-5]|2[0-4]\d|1?\d{1,2})\b/;
+            const ipv6Pattern = /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/;
+            if (ipv4Pattern.test(inputText) || ipv6Pattern.test(inputText)) return true;
+
+            // Crypto wallet addresses (BTC + ETH)
+            const btcPattern = /\b(bc1[a-z0-9]{25,39}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/;
+            const ethPattern = /\b0x[a-fA-F0-9]{40}\b/;
+            if (btcPattern.test(inputText) || ethPattern.test(inputText)) return true;
+
+            let cleanText = inputText.toLowerCase();
+            const substitutions = {
+                '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a',
+                '@': 'a', '5': 's', '$': 's', '7': 't', 'x': 'x',
+                '(': 'c', '[': 'c'
+            };
+            cleanText = cleanText.split('').map(char => substitutions[char] || char).join('');
+            cleanText = cleanText.replace(/[^a-z0-9]/g, '');
+
+            // Home / street addresses
+            const addressPattern = /\d+[a-z0-9]{3,}(st|street|avenue|ave|rd|road|blvd|boulevard|lane|ln|drive|dr|way|court|ct|apt|apartment|suite|ste|unit)/i;
+            if (addressPattern.test(cleanText)) return true;
+
+            const bannedWords = [
+                'goon', 'whore', 'slut', 'discord', 'tiktok', 'snapchat', 'snap',
+                'facebook', 'instagram', 'insta', 'telegram', 'kik', 'whatsapp',
+                'venmo', 'cashapp', 'paypal', 'zelle', 'onlyfans',
+                'nigga', 'nigger', 'niger', 'niga'
+            ];
+
+            for (const word of bannedWords) {
+                if (cleanText.includes(word)) return true;
+            }
+
             return false;
         }
 
-        function applyFilter(text, userId) {
-            // BYPASS FOR YOU
-            if (userId === TARGET_ID) return text; 
-            
-            // Basic mock filter for normal users
-            return text.replace(/badword/gi, '****');
+        // --- REMOTE BLACKLIST CHECK ---
+        function applyBanState() {
+            isBanned = true;
+            msgInput.disabled = true;
+            sendBtn.disabled = true;
+            msgInput.placeholder = "You are banned";
+            errorToast.innerText = `You have been banned for: ${banReason}`;
         }
 
-        // ==========================================
-        // 2. SENDING & COMMAND LOGIC
-        // ==========================================
-        function handleSend() {
-            const input = document.getElementById('chatInput');
-            let text = input.value.trim();
-            if (!text) return;
+        async function checkBlacklist() {
+            try {
+                const res = await fetch(BLACKLIST_URL, { cache: 'no-store' });
+                const data = await res.json();
+                const tokens = data.usertokens || [];
+                const reasons = data.reasons || [];
+                const idx = tokens.indexOf(userToken);
+                if (idx !== -1) {
+                    banReason = reasons[idx] || 'Violation of community guidelines';
+                    applyBanState();
+                }
+            } catch (e) {
+                console.warn('Blacklist check failed', e);
+            }
+        }
+        checkBlacklist();
+        setInterval(checkBlacklist, 60000);
 
-            // Run Antispam
-            if (isSpamming(currentUserId)) {
-                alert("Anti-Spam: Please wait a moment before sending another message.");
+        themeBtn.addEventListener('click', () => {
+            const isDark = document.documentElement.hasAttribute('data-theme');
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                themeBtn.innerText = 'Dark Mode';
+                localStorage.setItem('theme_preference', 'light');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeBtn.innerText = 'Light Mode';
+                localStorage.setItem('theme_preference', 'dark');
+            }
+        });
+
+        if (localStorage.getItem('theme_preference') === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            themeBtn.innerText = 'Light Mode';
+        }
+
+        function refreshInputEnabledState() {
+            if (isBanned) { applyBanState(); return; }
+            if (isConnected && !isRateLimited && !isChatShutdown) {
+                msgInput.disabled = false;
+                sendBtn.disabled = false;
+                msgInput.placeholder = "Type a message...";
+                errorToast.innerText = "";
+            }
+        }
+
+        client.on('connect', () => {
+            isConnected = true;
+            client.subscribe([CHAT_TOPIC, HISTORY_TOPIC, STATUS_TOPIC, SHUTDOWN_STATE_TOPIC], (err) => {
+                if (err) console.error("Topic subscription error");
+            });
+
+            presenceDot.style.background = "#22c55e";
+            presenceDot.style.boxShadow = "0 0 8px #22c55e";
+            document.getElementById('onlineCount').innerText = "Live";
+
+            refreshInputEnabledState();
+
+            setTimeout(() => {
+                if (!receivedHistoryPayload) renderMessages(globalMessages);
+            }, 1500);
+
+            client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
+            setInterval(() => {
+                if (isConnected) client.publish(STATUS_TOPIC, JSON.stringify({ user: userToken, ping: Date.now() }));
+            }, 4000);
+
+            if (isModUser) {
+                console.log('%cMod console ready: shutdown(), activate(), clearMessages(), broadcast("message")', 'color:#eab308;font-weight:bold;');
+            }
+        });
+
+        client.on('disconnect', () => { handleOfflineState("Disconnected from broker"); });
+        client.on('offline', () => { handleOfflineState("Connection dropped. Retrying..."); });
+
+        function handleOfflineState(msg) {
+            isConnected = false;
+            msgInput.disabled = true;
+            sendBtn.disabled = true;
+            msgInput.placeholder = "Connecting...";
+            presenceDot.style.background = "#eab308";
+            presenceDot.style.boxShadow = "0 0 8px #eab308";
+            document.getElementById('onlineCount').innerText = "Connecting...";
+            if (!isBanned) errorToast.innerText = msg;
+        }
+
+        function showPinnedBanner(text) {
+            pinnedBanner.innerText = text;
+            pinnedBanner.style.display = 'block';
+            clearTimeout(window._pinnedTimeout);
+            window._pinnedTimeout = setTimeout(() => { pinnedBanner.style.display = 'none'; }, 10000);
+        }
+
+        client.on('message', (topic, payload) => {
+            let incomingData;
+            try { incomingData = JSON.parse(payload.toString()); }
+            catch (e) {
+                console.warn(`Ignored malformed packet on ${topic}`);
+                if (topic === HISTORY_TOPIC) {
+                    receivedHistoryPayload = true;
+                    renderMessages([]);
+                }
                 return;
             }
 
-            // Run Filter
-            text = applyFilter(text, currentUserId);
+            try {
+                if (topic === STATUS_TOPIC) {
+                    activePeers[incomingData.user] = Date.now();
+                    const cutoff = Date.now() - 10000;
+                    let count = 0;
+                    for (const u in activePeers) { if (activePeers[u] > cutoff) count++; }
 
-            // Command Check
-            const isTokenCommand = (text === 'yourtoken()');
+                    document.getElementById('onlineCount').innerText = `${Math.max(1, count)} online`;
 
-            const msg = {
-                id: Date.now(),
-                senderId: currentUserId,
-                // If it's the token command, the text just becomes their token (ID)
-                text: isTokenCommand ? currentUserId : text, 
-                isCommand: isTokenCommand,
-                timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-            };
-
-            globalMessages.push(msg);
-            renderAllMessages(); // Re-render chat
-            input.value = '';
-            
-            // Scroll to bottom
-            const chatBox = document.getElementById('chatBox');
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        function handleEnter(e) {
-            if (e.key === 'Enter') handleSend();
-        }
-
-        // ==========================================
-        // 3. RENDERING & PERSPECTIVE LOGIC
-        // ==========================================
-        function renderAllMessages() {
-            const chatBox = document.getElementById('chatBox');
-            chatBox.innerHTML = ''; // Clear current view
-
-            globalMessages.forEach(msg => {
-                const isSentByTarget = (msg.senderId === TARGET_ID);
-                const amITheTarget = (currentUserId === TARGET_ID);
-
-                // Default author is the raw ID
-                let displayAuthor = msg.senderId;
-
-                // OVERRIDE LOGIC: 
-                // If target sent it, AND I am not the target, AND it's not the token command
-                if (isSentByTarget && !amITheTarget && !msg.isCommand) {
-                    displayAuthor = 'FILENFOLDER';
+                    let shouldShowUsernames = count > 16;
+                    if (showingUsernames !== shouldShowUsernames) {
+                        showingUsernames = shouldShowUsernames;
+                        renderMessages(globalMessages);
+                    }
+                    return;
                 }
 
-                // STYLE LOGIC:
-                // VIPs get golden yellow text regardless of perspective
-                const textStyle = isSentByTarget ? 'color: var(--vip-gold); font-weight: 600;' : '';
-                // Add golden name styling if the override is active
-                const authorClass = (displayAuthor === 'FILENFOLDER') ? 'vip-author' : 'author';
+                if (topic === SHUTDOWN_STATE_TOPIC) {
+                    isChatShutdown = !!incomingData.active;
+                    if (isBanned) return;
+                    if (isChatShutdown) {
+                        msgInput.disabled = true;
+                        sendBtn.disabled = true;
+                        msgInput.placeholder = "Chat disabled by moderator...";
+                        if (!isModUser) errorToast.innerText = "A moderator has shut down chat (usually for announcements).";
+                    } else {
+                        refreshInputEnabledState();
+                    }
+                    return;
+                }
 
+                if (topic === HISTORY_TOPIC) {
+                    receivedHistoryPayload = true;
+                    if (Array.isArray(incomingData) && globalMessages.length === 0) {
+                        globalMessages = incomingData.filter(m => m.text && !containsBannedContent(m.text));
+                        renderMessages(globalMessages);
+                    } else if (incomingData && incomingData.action === 'CLEAR_PURGE') {
+                        globalMessages = [];
+                        renderMessages([]);
+                    }
+                    return;
+                }
+
+                if (topic === CHAT_TOPIC) {
+                    if (incomingData.action === 'BROADCAST') {
+                        showPinnedBanner(escapeHTML(incomingData.text || ''));
+                        return;
+                    }
+
+                    if (incomingData.action === 'CLEAR_PURGE') {
+                        globalMessages = [];
+                        renderMessages([]);
+                        return;
+                    }
+
+                    if (incomingData && incomingData.id && !globalMessages.some(m => m.id === incomingData.id)) {
+                        if (containsBannedContent(incomingData.text)) return;
+
+                        globalMessages.push(incomingData);
+                        if (globalMessages.length > 30) globalMessages = globalMessages.slice(-30);
+                        renderMessages(globalMessages);
+
+                        if (incomingData.sender === userToken) {
+                            client.publish(HISTORY_TOPIC, JSON.stringify(globalMessages), { retain: true, qos: 1 });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Internal process error", e);
+            }
+        });
+
+        function renderMessages(msgs) {
+            if (msgs.length === 0) {
+                messageBox.innerHTML = '<div class="loading-notice">No messages found in this feed yet.</div>';
+                return;
+            }
+            messageBox.innerHTML = '';
+            msgs.forEach(msg => {
+                if (!msg.text) return;
                 const div = document.createElement('div');
-                div.className = 'message';
-                div.innerHTML = `
-                    <div class="msg-header">
-                        <span class="${authorClass}">${escapeHtml(displayAuthor)}</span>
-                        <span class="time">${msg.timestamp}</span>
-                    </div>
-                    <div class="msg-body" style="${textStyle}">
-                        ${escapeHtml(msg.text)}
-                    </div>
-                `;
-                chatBox.appendChild(div);
+                div.className = 'msg';
+
+                const identifierToHash = msg.userIpIdentifier || msg.sender || 'anon';
+                const leftOutlineColor = getColorFromIdentifier(identifierToHash);
+
+                div.style.borderLeft = `4px solid ${leftOutlineColor}`;
+
+                let nameTagHTML = '';
+                if (showingUsernames) {
+                    nameTagHTML = `<span class="sender-id" style="color: ${leftOutlineColor}">${escapeHTML(msg.sender || 'anon')}</span>`;
+                }
+
+                div.innerHTML = `${nameTagHTML}<div>${escapeHTML(msg.text)}</div><div class="meta">${escapeHTML(msg.time || '')}</div>`;
+                messageBox.appendChild(div);
             });
+            messageBox.scrollTop = messageBox.scrollHeight;
         }
 
-        // Helper to prevent HTML injection
-        function escapeHtml(str) {
-            return String(str).replace(/[&<>"']/g, m => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-            }[m]));
+        function handleSendMessage() {
+            if (!isConnected || isRateLimited || isChatShutdown || isBanned) return;
+
+            const now = Date.now();
+            const text = msgInput.value.trim();
+            if (!text) return;
+
+            userMessageTimestamps.push(now);
+            if (userMessageTimestamps.length > 5) userMessageTimestamps.shift();
+
+            if (userMessageTimestamps.length === 5) {
+                let triggersSpamFlag = true;
+                for (let i = 1; i < userMessageTimestamps.length; i++) {
+                    if (userMessageTimestamps[i] - userMessageTimestamps[i - 1] >= 2000) {
+                        triggersSpamFlag = false;
+                        break;
+                    }
+                }
+                if (triggersSpamFlag) {
+                    triggerRateLimit();
+                    msgInput.value = '';
+                    return;
+                }
+            }
+
+            if (containsBannedContent(text)) {
+                errorToast.innerText = "Message contains blocked phrases or restricted personal info.";
+                setTimeout(() => { if (!isRateLimited && !isChatShutdown && !isBanned) errorToast.innerText = ""; }, 4000);
+                msgInput.value = '';
+                return;
+            }
+
+            const newMsg = {
+                id: userToken + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                timestamp: now,
+                sender: userToken,
+                userIpIdentifier: userIP,
+                text: text,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+
+            client.publish(CHAT_TOPIC, JSON.stringify(newMsg), { qos: 1 });
+            msgInput.value = '';
+            msgInput.focus();
         }
 
-        // Test Helper to swap users
-        function switchUser() {
-            currentUserId = document.getElementById('userSwitcher').value;
-            renderAllMessages(); // Re-render to see how the new user views the history
+        function triggerRateLimit() {
+            isRateLimited = true;
+            msgInput.disabled = true;
+            sendBtn.disabled = true;
+
+            let remainingTime = 5.0;
+            errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+            msgInput.placeholder = "Locked due to spam protection...";
+
+            const countdownInterval = setInterval(() => {
+                remainingTime -= 0.1;
+                if (remainingTime <= 0) {
+                    clearInterval(countdownInterval);
+                    isRateLimited = false;
+                    refreshInputEnabledState();
+                    if (isChatShutdown && !isBanned) {
+                        errorToast.innerText = "A moderator has shut down chat (usually for announcements).";
+                        msgInput.placeholder = "Chat disabled by moderator...";
+                    }
+                } else {
+                    errorToast.innerText = `Please Try again after ${remainingTime.toFixed(1)}s, This prevents SPAMMER bots`;
+                }
+            }, 100);
         }
 
+        // --- CONSOLE ADMIN COMMANDS (mod-token gated) ---
+
+        window.clearMessages = function() {
+            if (!isModUser) { console.warn("Command failed: not authorized."); return; }
+            if (!isConnected) return;
+            const clearCmd = { action: 'CLEAR_PURGE', timestamp: Date.now() };
+            client.publish(CHAT_TOPIC, JSON.stringify(clearCmd), { qos: 1 });
+            client.publish(HISTORY_TOPIC, JSON.stringify(clearCmd), { retain: true, qos: 1 });
+            console.log("Feed cleared.");
+        };
+
+        window.shutdown = function() {
+            if (!isModUser) { console.warn("Command failed: not authorized."); return; }
+            if (!isConnected) return;
+            client.publish(SHUTDOWN_STATE_TOPIC, JSON.stringify({ active: true, sender: userToken, timestamp: Date.now() }), { retain: true, qos: 1 });
+            console.log("Chat shut down (state is retained on the broker, so it persists even if you refresh).");
+        };
+
+        window.activate = function() {
+            if (!isModUser) { console.warn("Command failed: not authorized."); return; }
+            if (!isConnected) return;
+            client.publish(SHUTDOWN_STATE_TOPIC, JSON.stringify({ active: false, sender: userToken, timestamp: Date.now() }), { retain: true, qos: 1 });
+            console.log("Chat reactivated for everyone.");
+        };
+
+        window.broadcast = function(message) {
+            if (!isModUser) { console.warn("Command failed: not authorized."); return; }
+            if (!isConnected || !message) return;
+            const cmd = { action: 'BROADCAST', text: String(message), sender: userToken, timestamp: Date.now() };
+            client.publish(CHAT_TOPIC, JSON.stringify(cmd), { qos: 1 });
+        };
+
+        sendBtn.addEventListener('click', handleSendMessage);
+        msgInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSendMessage();
+        });
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t]));
+        }
     </script>
 </body>
 </html>
